@@ -91,7 +91,7 @@ def analyze_emotion(text, api_key):
         return {"error": str(e)}
 
 # ================= 4. 前端页面 UI =================
-st.set_page_config(page_title="MindCapital", page_icon="🧘", layout="mobile")
+st.set_page_config(page_title="MindCapital", page_icon="🧘", layout="centered")
 
 if "user_id" not in st.session_state:
     st.session_state.user_id = "guest_001"
