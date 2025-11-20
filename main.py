@@ -48,14 +48,27 @@ def save_to_db(user_id, text, json_result):
     sb = init_supabase()
     if sb:
         try:
-            sb.table("emotion_logs").insert({
+            st.write("🔍 正在尝试连接数据库...") # 调试信息1
+            
+            # 执行插入
+            response = sb.table("emotion_logs").insert({
                 "user_id": user_id,
                 "user_input": text,
                 "ai_result": json_result
             }).execute()
-            return True
+            
+            # 【关键】把数据库的原始回复打印出来！
+            st.write("🔍 数据库返回结果:", response) 
+            
+            # 检查是否真的写入了数据
+            if hasattr(response, 'data') and len(response.data) > 0:
+                return True
+            else:
+                st.error("❌ 数据库连接成功，但没有写入任何数据！可能是 RLS 权限拦截。")
+                return False
+                
         except Exception as e:
-            st.error(f"存库失败: {e}")
+            st.error(f"❌ 严重报错: {str(e)}")
             return False
     return False
 
