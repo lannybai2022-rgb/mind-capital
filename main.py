@@ -107,12 +107,19 @@ def get_history(user_id):
         except: return []
     return []
 
-# ================= 3. AI 分析逻辑 (一字未改) =================
+# ================= 3. AI 分析逻辑 (只修了这里的 Bug) =================
 def clean_json_string(s):
     match = re.search(r'\{[\s\S]*\}', s)
     if match: s = match.group()
+    
+    # 1. 去逗号
     s = re.sub(r',\s*\}', '}', s)
     s = re.sub(r',\s*\]', ']', s)
+    
+    # 【关键修复】2. 去掉数字前面的加号 (例如 ": +1" 改为 ": 1")
+    # JSON 标准不支持 +1，只支持 1 或 -1
+    s = re.sub(r':\s*\+', ': ', s)
+    
     return s
 
 def analyze_emotion(text, api_key):
@@ -132,7 +139,7 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e), "raw_content": content}
 
-# ================= 4. 视觉组件 (修复：压缩为单行 HTML，杜绝解析错误) =================
+# ================= 4. 视觉组件 (一字未改，保持单行 HTML) =================
 def get_gauge_html(label, score, icon, theme="peace"):
     percent = (score + 5) * 10
     
@@ -143,8 +150,6 @@ def get_gauge_html(label, score, icon, theme="peace"):
     }
     c = colors.get(theme, colors["peace"])
     
-    # 【关键修改】这里把 HTML 拼接成了一整行字符串，没有任何换行符。
-    # 这样 Streamlit 就绝对不会把它误判为 Markdown 文本了。
     return f"<div style='display: flex; flex-direction: column; align-items: center; width: 60px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
 # ================= 5. 主程序 =================
@@ -202,7 +207,7 @@ with tab1:
                     h2 = get_gauge_html("觉察度", sc.get("觉察度", 0), "👁️", "awareness")
                     h3 = get_gauge_html("能量值", sc.get("能量水平", 0), "🔋", "energy")
                     
-                    # 【关键修改】容器也拼接成单行，防止电脑端出现 </div> 乱码
+                    # 容器保持单行
                     container_html = f"<div style='display: flex; justify-content: space-around; align-items: flex-end; margin: 20px 0; width: 100%;'>{h1}{h2}{h3}</div>"
                     st.markdown(container_html, unsafe_allow_html=True)
 
