@@ -7,7 +7,7 @@ import traceback
 import re
 from supabase import create_client
 
-# ================= 1. 核心 Prompt (严谨完整版，一字未改) =================
+# ================= 1. 核心 Prompt (一字未改) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
 你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
@@ -77,7 +77,7 @@ STRICT_SYSTEM_PROMPT = """
 }
 """
 
-# ================= 2. 数据库连接层 (保持原样) =================
+# ================= 2. 数据库连接层 (一字未改) =================
 @st.cache_resource
 def init_supabase():
     try:
@@ -107,7 +107,7 @@ def get_history(user_id):
         except: return []
     return []
 
-# ================= 3. AI 分析逻辑 (保持原样) =================
+# ================= 3. AI 分析逻辑 (一字未改) =================
 def clean_json_string(s):
     match = re.search(r'\{[\s\S]*\}', s)
     if match: s = match.group()
@@ -132,7 +132,7 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e), "raw_content": content}
 
-# ================= 4. 视觉组件 (修复：移除那条白线) =================
+# ================= 4. 视觉组件 (修复：压缩为单行 HTML，杜绝解析错误) =================
 def get_gauge_html(label, score, icon, theme="peace"):
     percent = (score + 5) * 10
     
@@ -143,26 +143,9 @@ def get_gauge_html(label, score, icon, theme="peace"):
     }
     c = colors.get(theme, colors["peace"])
     
-    # 修复点：删除了 <div ... background: rgba(255,255,255,0.8) ...> 那一行
-    return f"""
-<div style="display: flex; flex-direction: column; align-items: center; width: 60px;">
-    <div style="height: 160px; width: 36px; background: #f0f2f6; border-radius: 18px; position: relative; margin-top: 5px;">
-        <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 18px; transition: height 0.8s;"></div>
-        
-        <!-- 注意：这里原先那行白线代码已经被彻底删除了 -->
-        
-        <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); 
-                    background: #fff; color: {c[2]}; font-weight: bold; font-size: 12px; 
-                    padding: 1px 4px; border-radius: 6px; border: 1px solid {c[2]}; 
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.15); z-index: 10; min-width: 24px; text-align: center;">
-            {score}
-        </div>
-    </div>
-    <div style="margin-top: 8px; font-size: 12px; font-weight: bold; color: #666; text-align: center; line-height: 1.2;">
-        {icon}<br>{label}
-    </div>
-</div>
-"""
+    # 【关键修改】这里把 HTML 拼接成了一整行字符串，没有任何换行符。
+    # 这样 Streamlit 就绝对不会把它误判为 Markdown 文本了。
+    return f"<div style='display: flex; flex-direction: column; align-items: center; width: 60px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
 # ================= 5. 主程序 =================
 st.set_page_config(page_title="AI情绪资产助手", page_icon="🦁", layout="centered")
@@ -219,7 +202,8 @@ with tab1:
                     h2 = get_gauge_html("觉察度", sc.get("觉察度", 0), "👁️", "awareness")
                     h3 = get_gauge_html("能量值", sc.get("能量水平", 0), "🔋", "energy")
                     
-                    container_html = f"""<div style="display: flex; justify-content: space-around; align-items: flex-end; margin: 20px 0; width: 100%;">{h1}{h2}{h3}</div>"""
+                    # 【关键修改】容器也拼接成单行，防止电脑端出现 </div> 乱码
+                    container_html = f"<div style='display: flex; justify-content: space-around; align-items: flex-end; margin: 20px 0; width: 100%;'>{h1}{h2}{h3}</div>"
                     st.markdown(container_html, unsafe_allow_html=True)
 
                     st.write("---")
