@@ -3,11 +3,11 @@ import openai
 import json
 import datetime
 import pandas as pd
-import traceback  # <--- 新增：用于打印详细报错
-import re         # <--- 新增：用于精准提取 JSON
+import traceback
+import re # <--- 新增：用于修复 JSON
 from supabase import create_client
 
-# ================= 1. 核心 Prompt (完整保留严谨标准) =================
+# ================= 1. 核心 Prompt (完全恢复你的原版设定) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
 你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
@@ -77,15 +77,17 @@ STRICT_SYSTEM_PROMPT = """
 }
 """
 
-# ================= 2. 数据库连接层 =================
+# ================= 2. 数据库连接层 (保持原样) =================
 @st.cache_resource
 def init_supabase():
     try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
-        return create_client(url, key)
+        if "SUPABASE_URL" in st.secrets:
+            url = st.secrets["SUPABASE_URL"]
+            key = st.secrets["SUPABASE_KEY"]
+            return create_client(url, key)
     except:
         return None
+    return None
 
 def save_to_db(user_id, text, json_result):
     sb = init_supabase()
@@ -112,15 +114,30 @@ def get_history(user_id):
             return []
     return []
 
-# ================= 3. AI 分析逻辑 (已增强稳定性与调试功能) =================
+# ================= 3. AI 分析逻辑 (新增：正则清洗功能) =================
+
+def clean_json_string(s):
+    """
+    清洗 AI 返回的字符串，修复 JSON 格式错误
+    """
+    # 1. 提取最外层大括号
+    match = re.search(r'\{[\s\S]*\}', s)
+    if match:
+        s = match.group()
+    
+    # 2. 正则去逗号：把 "key": value, } 替换为 "key": value }
+    # 很多时候 AI 会在最后一个字段后面多写一个逗号，导致 Python 解析失败
+    s = re.sub(r',\s*\}', '}', s)
+    s = re.sub(r',\s*\]', ']', s)
+    return s
+
 def analyze_emotion(text, api_key):
     client = openai.OpenAI(
         api_key=api_key, 
         base_url="https://api.deepseek.com"
     )
     
-    content = "（AI尚未返回数据）" # 初始化变量，防止报错
-    
+    content = ""
     try:
         response = client.chat.completions.create(
             model="deepseek-chat",
@@ -133,31 +150,20 @@ def analyze_emotion(text, api_key):
         
         content = response.choices[0].message.content
         
-        # === 核心修复：使用正则提取 JSON (比简单的 replace 更稳) ===
-        # 寻找第一个 '{' 和最后一个 '}' 之间的所有内容
-        match = re.search(r'\{[\s\S]*\}', content)
-        
-        if match:
-            json_str = match.group()
-            return json.loads(json_str)
-        else:
-            # 如果找不到大括号，抛出异常进入下面的 except 流程
-            raise ValueError("AI返回的内容中找不到 JSON 对象")
+        # === 使用清洗函数修复数据 ===
+        cleaned_content = clean_json_string(content)
+        return json.loads(cleaned_content)
         
     except Exception as e:
-        # === 调试增强：返回详细错误信息 ===
+        # 返回错误信息，方便调试
         return {
-            "error": str(e),
-            "raw_content": content, # 把 AI 说的胡话带回来
-            "traceback": traceback.format_exc() # 把详细报错带回来
+            "error": f"AI数据解析失败: {str(e)}", 
+            "raw_content": content
         }
 
-# ================= 4. 视觉组件 (纯净无报错版) =================
+# ================= 4. 视觉组件 (修改：适配手机横排) =================
 
 def render_vertical_gauge(label, score, icon, theme="peace"):
-    """
-    渲染纵向能量柱 (包含刻度、气泡、动态颜色)
-    """
     percent = (score + 5) * 10
     
     if theme == "peace":
@@ -173,19 +179,17 @@ def render_vertical_gauge(label, score, icon, theme="peace"):
         bg_gradient = "#ccc"
         text_color = "#333"
 
+    # 修改点：将 height 改为 150px (原220px)，宽度适配 flex 布局
     html_code = f"""
-    <div style="display: flex; flex-direction: column; align-items: center; height: 220px; position: relative;">
-        <div style="height: 180px; width: 40px; background-color: #f0f2f6; border-radius: 20px; position: relative; overflow: visible; margin-top: 10px;">
-            <div style="position: absolute; top:0; left:0; width:100%; height:100%; border-radius: 20px; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);">
+    <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+        <div style="height: 160px; width: 36px; background-color: #f0f2f6; border-radius: 18px; position: relative; overflow: visible; margin-top: 10px;">
+            <div style="position: absolute; top:0; left:0; width:100%; height:100%; border-radius: 18px; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);">
                 <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: {percent}%; background: {bg_gradient}; transition: height 1s cubic-bezier(0.25, 0.8, 0.25, 1);"></div>
             </div>
             <div style="position: absolute; bottom: 50%; width: 100%; height: 2px; background: rgba(255,255,255,0.8); z-index: 2;"></div>
-            <div style="position: absolute; right: -30px; top: 0; font-size: 10px; color: #999;">+5</div>
-            <div style="position: absolute; right: -30px; top: 48%; font-size: 10px; color: #999;">0</div>
-            <div style="position: absolute; right: -30px; bottom: 0; font-size: 10px; color: #999;">-5</div>
-            <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {text_color}; font-weight: bold; font-size: 14px; padding: 2px 8px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5; min-width: 30px; text-align: center; border: 1px solid {text_color};">{score}</div>
+            <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {text_color}; font-weight: bold; font-size: 12px; padding: 2px 4px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5; min-width: 24px; text-align: center; border: 1px solid {text_color};">{score}</div>
         </div>
-        <div style="margin-top: 15px; font-weight: 600; color: #555; font-size: 14px; text-align: center;">{icon}<br>{label}</div>
+        <div style="margin-top: 10px; font-weight: 600; color: #555; font-size: 13px; text-align: center;">{icon}<br>{label}</div>
     </div>
     """
     st.markdown(html_code, unsafe_allow_html=True)
@@ -193,9 +197,15 @@ def render_vertical_gauge(label, score, icon, theme="peace"):
 # ================= 5. 主程序入口 =================
 st.set_page_config(page_title="AI情绪资产助手", page_icon="🦁", layout="centered")
 
-# CSS 适配优化
+# === 新增 CSS：修复手机端列堆叠问题 ===
 st.markdown("""
 <style>
+    /* 强制手机上的列横向排列 */
+    [data-testid="column"] {
+        width: 33.33% !important;
+        flex: 1 1 33.33% !important;
+        min-width: 33.33% !important;
+    }
     .stTextArea textarea { font-size: 16px !important; border-radius: 10px; }
     .stButton button { width: 100%; border-radius: 8px; height: 45px; font-weight: bold; }
 </style>
@@ -230,18 +240,10 @@ with tab1:
                 result = analyze_emotion(user_input, api_key)
                 
                 if "error" in result:
-                    st.error("🚨 铸造失败（已捕捉错误现场）")
-                    
-                    # === 调试信息显示区域 ===
-                    st.warning(f"错误原因: {result['error']}")
-                    
-                    with st.expander("🔍 点击查看 AI 返回的原始内容 (截图发给开发)", expanded=True):
-                        st.code(result.get('raw_content', '无内容'), language="text")
-                        
-                    with st.expander("🐞 技术报错堆栈 (Traceback)"):
-                        st.code(result.get('traceback', '无堆栈'), language="bash")
-                    # =========================
-                    
+                    st.error(f"系统故障: {result['error']}")
+                    # 如果出错，显示原始内容以便排查
+                    with st.expander("查看 AI 返回的原始数据"):
+                        st.code(result.get('raw_content'))
                 else:
                     save_to_db(st.session_state.user_id, user_input, result)
                     st.toast("✅ 觉察已铸造")
@@ -290,39 +292,56 @@ with tab2:
     if data:
         chart_data = []
         for item in data:
-            res = item['ai_result']
-            scores = res.get('scores', {})
-            utc_time = pd.to_datetime(item['created_at'])
-            bj_time = utc_time + pd.Timedelta(hours=8)
+            # 容错处理：防止历史脏数据导致图表挂掉
+            try:
+                res = item['ai_result']
+                # 如果数据库里存的是字符串，先转成 JSON
+                if isinstance(res, str):
+                    res = json.loads(res)
+                    
+                scores = res.get('scores', {})
+                utc_time = pd.to_datetime(item['created_at'])
+                bj_time = utc_time + pd.Timedelta(hours=8)
+                
+                chart_data.append({
+                    "时间": bj_time, 
+                    "平静度": scores.get("平静度", 0),
+                    "觉察度": scores.get("觉察度", 0),
+                    "能量": scores.get("能量水平", 0)
+                })
+            except:
+                continue
+        
+        if chart_data:
+            df = pd.DataFrame(chart_data)
+            df = df.sort_values('时间')
+            st.line_chart(df, x='时间', y=['平静度', '觉察度', '能量'], color=["#2ecc71", "#9b59b6", "#e67e22"])
             
-            chart_data.append({
-                "时间": bj_time, 
-                "平静度": scores.get("平静度", 0),
-                "觉察度": scores.get("觉察度", 0),
-                "能量": scores.get("能量水平", 0)
-            })
-        
-        df = pd.DataFrame(chart_data)
-        df = df.sort_values('时间')
-        
-        st.line_chart(df, x='时间', y=['平静度', '觉察度', '能量'], color=["#2ecc71", "#9b59b6", "#e67e22"])
-        
-        st.markdown("---")
-        
-        for item in data:
-            utc_time = pd.to_datetime(item['created_at'])
-            time_str = (utc_time + pd.Timedelta(hours=8)).strftime('%m-%d %H:%M')
-            summary = item['ai_result'].get('summary', '无摘要')
+            st.markdown("---")
             
-            with st.expander(f"{time_str} | {summary}"):
-                sc = item['ai_result'].get('scores', {})
-                st.markdown(f"""
-                <small>
-                🕊️ <b style='color:#2ecc71'>{sc.get('平静度')}</b> | 
-                👁️ <b style='color:#9b59b6'>{sc.get('觉察度')}</b> | 
-                🔋 <b style='color:#e67e22'>{sc.get('能量水平')}</b>
-                </small>
-                """, unsafe_allow_html=True)
-                st.info(f"建议: {item['ai_result'].get('recommendations', {}).get('身心灵调适建议')}")
+            for item in data:
+                try:
+                    utc_time = pd.to_datetime(item['created_at'])
+                    time_str = (utc_time + pd.Timedelta(hours=8)).strftime('%m-%d %H:%M')
+                    
+                    res = item['ai_result']
+                    if isinstance(res, str): res = json.loads(res)
+                    
+                    summary = res.get('summary', '无摘要')
+                    
+                    with st.expander(f"{time_str} | {summary}"):
+                        sc = res.get('scores', {})
+                        st.markdown(f"""
+                        <small>
+                        🕊️ <b style='color:#2ecc71'>{sc.get('平静度')}</b> | 
+                        👁️ <b style='color:#9b59b6'>{sc.get('觉察度')}</b> | 
+                        🔋 <b style='color:#e67e22'>{sc.get('能量水平')}</b>
+                        </small>
+                        """, unsafe_allow_html=True)
+                        st.info(f"建议: {res.get('recommendations', {}).get('身心灵调适建议')}")
+                except:
+                    continue
+        else:
+             st.info("暂无有效数据")
     else:
         st.info("暂无数据")
