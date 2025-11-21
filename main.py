@@ -3,6 +3,8 @@ import openai
 import json
 import datetime
 import pandas as pd
+import traceback  # <--- 新增：用于打印详细报错
+import re         # <--- 新增：用于精准提取 JSON
 from supabase import create_client
 
 # ================= 1. 核心 Prompt (完整保留严谨标准) =================
@@ -110,12 +112,15 @@ def get_history(user_id):
             return []
     return []
 
-# ================= 3. AI 分析逻辑 (已修复手机端 JSON 解析 Bug) =================
+# ================= 3. AI 分析逻辑 (已增强稳定性与调试功能) =================
 def analyze_emotion(text, api_key):
     client = openai.OpenAI(
         api_key=api_key, 
         base_url="https://api.deepseek.com"
     )
+    
+    content = "（AI尚未返回数据）" # 初始化变量，防止报错
+    
     try:
         response = client.chat.completions.create(
             model="deepseek-chat",
@@ -124,24 +129,28 @@ def analyze_emotion(text, api_key):
                 {"role": "user", "content": f"【输入文本】\n{text}"}
             ],
             temperature=0.5,
-            # 注意：这里不强制 response_format，而是靠后处理清洗，兼容性更好
         )
         
-        # === 核心修复：数据清洗 ===
         content = response.choices[0].message.content
         
-        # 1. 去除可能存在的 Markdown 代码块标记
-        if "```" in content:
-            content = content.replace("```json", "").replace("```", "")
+        # === 核心修复：使用正则提取 JSON (比简单的 replace 更稳) ===
+        # 寻找第一个 '{' 和最后一个 '}' 之间的所有内容
+        match = re.search(r'\{[\s\S]*\}', content)
         
-        # 2. 去除首尾空白字符
-        content = content.strip()
-        
-        # 3. 解析 JSON
-        return json.loads(content)
+        if match:
+            json_str = match.group()
+            return json.loads(json_str)
+        else:
+            # 如果找不到大括号，抛出异常进入下面的 except 流程
+            raise ValueError("AI返回的内容中找不到 JSON 对象")
         
     except Exception as e:
-        return {"error": f"AI数据解析失败: {str(e)}"}
+        # === 调试增强：返回详细错误信息 ===
+        return {
+            "error": str(e),
+            "raw_content": content, # 把 AI 说的胡话带回来
+            "traceback": traceback.format_exc() # 把详细报错带回来
+        }
 
 # ================= 4. 视觉组件 (纯净无报错版) =================
 
@@ -164,7 +173,6 @@ def render_vertical_gauge(label, score, icon, theme="peace"):
         bg_gradient = "#ccc"
         text_color = "#333"
 
-    # 压缩后的 HTML，确保 Streamlit 渲染稳定
     html_code = f"""
     <div style="display: flex; flex-direction: column; align-items: center; height: 220px; position: relative;">
         <div style="height: 180px; width: 40px; background-color: #f0f2f6; border-radius: 20px; position: relative; overflow: visible; margin-top: 10px;">
@@ -222,7 +230,18 @@ with tab1:
                 result = analyze_emotion(user_input, api_key)
                 
                 if "error" in result:
-                    st.error(f"系统故障: {result['error']}")
+                    st.error("🚨 铸造失败（已捕捉错误现场）")
+                    
+                    # === 调试信息显示区域 ===
+                    st.warning(f"错误原因: {result['error']}")
+                    
+                    with st.expander("🔍 点击查看 AI 返回的原始内容 (截图发给开发)", expanded=True):
+                        st.code(result.get('raw_content', '无内容'), language="text")
+                        
+                    with st.expander("🐞 技术报错堆栈 (Traceback)"):
+                        st.code(result.get('traceback', '无堆栈'), language="bash")
+                    # =========================
+                    
                 else:
                     save_to_db(st.session_state.user_id, user_input, result)
                     st.toast("✅ 觉察已铸造")
