@@ -193,25 +193,25 @@ with st.sidebar:
 
 st.title("🦁 情绪资产")
 
-tab1, tab2 = st.tabs(["📝 觉察录入", "📊 资产报表"])
+tab1, tab2 = st.tabs(["📝 觉察录入", "📊 情绪资产大盘"])
 
 # --- Tab 1: 录入 ---
 with tab1:
     st.write("")
-    user_input = st.text_area("记录当下的感受...", height=120, placeholder="在此输入你的觉察记录...")
+    user_input = st.text_area("记录当下身心感受...", height=120, placeholder="在此输入你的觉察记录...")
     
-    if st.button("⚡️ 提交审计", type="primary"):
+    if st.button("⚡️ 铸造情绪资产", type="primary"):
         if not user_input or not api_key:
             st.toast("⚠️ 请输入内容或检查 Key")
         else:
-            with st.spinner("🤖 AI 正在进行霍金森能量层级分析..."):
+            with st.spinner("🤖 AI 正在进行身心灵分析..."):
                 result = analyze_emotion(user_input, api_key)
                 
                 if "error" in result:
                     st.error(f"系统故障: {result['error']}")
                 else:
                     save_to_db(st.session_state.user_id, user_input, result)
-                    st.toast("✅ 觉察已记录")
+                    st.toast("✅ 觉察已铸造")
                     
                     # === 结果展示 ===
                     st.markdown(f"""
@@ -248,7 +248,7 @@ with tab1:
 
 # --- Tab 2: 报表 ---
 with tab2:
-    st.subheader("📈 能量走势")
+    st.subheader("📈 情绪资产走势")
     if st.button("🔄 刷新大盘"):
         st.rerun()
     
