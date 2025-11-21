@@ -5,10 +5,10 @@ import datetime
 import pandas as pd
 from supabase import create_client
 
-# ================= 1. 核心 Prompt (保持不变，严格标准) =================
+# ================= 1. 核心 Prompt (保持最完整详细版) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
-你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。
+你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
 
 【情绪标签体系与评分标准】
 请严格基于以下3个维度进行量化分析（分数范围：-5到+5）。你必须参考下表中的描述来判断分数：
@@ -53,16 +53,25 @@ STRICT_SYSTEM_PROMPT = """
 +5: 精力过剩
 
 【任务要求】
-1. 评分：仔细阅读输入文本，根据上述标准量化评分。
-2. 洞察：提取核心情绪模式，提供身心灵建议。
-3. 格式：必须严格以JSON格式输出。
+1. 分析与评分： 仔细阅读输入文本，根据【情绪标签体系与评分标准】对用户的情绪状态进行量化评分（-5到+5）。
+2. 洞察与建议： 提取核心情绪模式，并提供一条身心灵调适建议。
+3. 输出格式： 必须严格以JSON格式输出，不包含任何额外解释性文字。
 
 【JSON输出格式】
 {
-  "summary": "30字内总结（一针见血）",
-  "scores": { "平静度": 整数, "觉察度": 整数, "能量水平": 整数 },
-  "key_insights": ["洞察1", "洞察2"],
-  "recommendations": { "身心灵调适建议": "50字建议" }
+  "summary": "对用户情绪日记的简短总结，不超过30字。",
+  "scores": {
+    "平静度": 整数,
+    "觉察度": 整数,
+    "能量水平": 整数
+  },
+  "key_insights": [
+    "洞察点1",
+    "洞察点2"
+  ],
+  "recommendations": {
+    "身心灵调适建议": "不超过50字。"
+  }
 }
 """
 
@@ -121,81 +130,40 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e)}
 
-# ================= 4. 全新视觉组件：纵向霍金森能量柱 =================
+# ================= 4. 修复版 UI 组件 (压缩HTML防止报错) =================
 
 def render_vertical_gauge(label, score, icon):
     """
-    渲染纵向能量柱 (Hawkins Style)
-    Score: -5 到 +5
+    渲染纵向能量柱 (无注释版)
     """
-    # 映射逻辑：把 -5到+5 映射到 0%到100% 的高度
-    # -5 => 0%, 0 => 50%, +5 => 100%
     percent = (score + 5) * 10
     
-    # 颜色逻辑 (参考霍金森能量表色谱)
-    # 低频(负分): 红/橙/褐
-    # 中频(0分): 灰/蓝
-    # 高频(正分): 亮绿/青/紫/金
-    
+    # 颜色逻辑
     if score <= -3:
-        # 羞愧/内疚/冷漠区
         color = "linear-gradient(to top, #8B0000, #FF4500)" 
         text_color = "#FF4500"
     elif -3 < score < 0:
-        # 恐惧/欲望/愤怒区
         color = "linear-gradient(to top, #FF8C00, #FFD700)"
         text_color = "#E67E22"
     elif score == 0:
-        # 中性
         color = "#BDC3C7"
         text_color = "#7F8C8D"
     elif 0 < score <= 3:
-        # 宽容/理智区
         color = "linear-gradient(to top, #3498DB, #2ECC71)"
         text_color = "#2ECC71"
     else:
-        # 爱/喜悦/开悟区
         color = "linear-gradient(to top, #9B59B6, #00FFFF)"
         text_color = "#9B59B6"
 
-    # 纵向柱状图 HTML
+    # 紧凑版 HTML
     html_code = f"""
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;">
-        <!-- 分数值 -->
-        <div style="font-size: 24px; font-weight: 800; color: {text_color}; margin-bottom: 8px; font-family: sans-serif;">
-            {score}
-        </div>
-        
-        <!-- 能量槽容器 -->
-        <div style="
-            height: 160px; 
-            width: 40px; 
-            background-color: #f0f2f6; 
-            border-radius: 20px; 
-            position: relative; 
-            overflow: hidden;
-            box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);
-        ">
-            <!-- 动态能量液 -->
-            <div style="
-                position: absolute; 
-                bottom: 0; 
-                left: 0; 
-                width: 100%; 
-                height: {percent}%; 
-                background: {color}; 
-                border-radius: 0 0 20px 20px;
-                transition: height 1s cubic-bezier(0.25, 0.8, 0.25, 1);
-            "></div>
-            
-            <!-- 刻度线 (装饰) -->
+        <div style="font-size: 24px; font-weight: 800; color: {text_color}; margin-bottom: 8px; font-family: sans-serif;">{score}</div>
+        <div style="height: 160px; width: 40px; background-color: #f0f2f6; border-radius: 20px; position: relative; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);">
+            <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: {percent}%; background: {color}; border-radius: 0 0 20px 20px; transition: height 1s cubic-bezier(0.25, 0.8, 0.25, 1);"></div>
             <div style="position: absolute; bottom: 50%; width: 100%; height: 1px; background: rgba(255,255,255,0.5);"></div>
         </div>
-        
-        <!-- 标签 -->
-        <div style="margin-top: 12px; font-weight: 600; color: #555; font-size: 14px; text-align: center;">
-            {icon}<br>{label}
-        </div>
+        <div style="margin-top: 12px; font-weight: 600; color: #555; font-size: 14px; text-align: center;">{icon}<br>{label}</div>
     </div>
     """
     st.markdown(html_code, unsafe_allow_html=True)
@@ -224,18 +192,17 @@ with st.sidebar:
     st.session_state.user_id = st.text_input("账户 ID", value=st.session_state.user_id)
 
 st.title("🦁 情绪资产")
-# st.caption("将每一次心跳，量化为可增值的心灵财富") 
 
-# 1. 修改文案：Tab 名称
-tab1, tab2 = st.tabs(["📝 觉察录入", "📊 趋势大盘"])
+# 【文案修改点 1】
+tab1, tab2 = st.tabs(["📝 觉察录入", "📊 资产报表"])
 
 # --- Tab 1: 录入 ---
 with tab1:
     st.write("")
-    # 2. 修改文案：Label
+    # 【文案修改点 2】
     user_input = st.text_area("记录当下的感受...", height=120, placeholder="在此输入你的觉察记录...")
     
-    if st.button("⚡️ 铸造情绪资产", type="primary"):
+    if st.button("⚡️ 提交审计", type="primary"):
         if not user_input or not api_key:
             st.toast("⚠️ 请输入内容或检查 Key")
         else:
@@ -255,7 +222,7 @@ with tab1:
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # 3. 核心视觉：三列布局 + 纵向能量柱
+                    # 3. 核心视觉：纵向能量柱
                     st.markdown("### 📊 能量层级 (Energy Levels)")
                     col1, col2, col3 = st.columns(3)
                     
@@ -270,7 +237,6 @@ with tab1:
 
                     st.write("---")
                     
-                    # 洞察与建议
                     with st.expander("💡 深度洞察 (Deep Insights)", expanded=True):
                         for insight in result.get('key_insights', []):
                             st.markdown(f"**•** {insight}")
