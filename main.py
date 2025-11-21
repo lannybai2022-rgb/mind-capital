@@ -129,10 +129,10 @@ def get_gauge_html(label, score, icon, theme="peace"):
     
     return f"<div style='display: flex; flex-direction: column; align-items: center; width: 80px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; top: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>+5</div><div style='position: absolute; top: 50%; transform: translateY(-50%); left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>0</div><div style='position: absolute; bottom: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>-5</div><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s; z-index: 1;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
-# ================= 5. 增强版图表函数 (云端防崩版) =================
+# ================= 5. 图表函数 (修复 SyntaxError) =================
 
 def parse_to_beijing(t_str):
-    """全自动时间清洗机：强制转为北京时间无时区对象"""
+    """全自动时间清洗机"""
     try:
         dt = pd.to_datetime(t_str)
         if dt.tzinfo is not None:
@@ -144,7 +144,7 @@ def parse_to_beijing(t_str):
         return datetime.datetime.now()
 
 def render_smooth_trend(data_list):
-    """Tab 1: 今日平滑曲线 (云端防崩版)"""
+    """Tab 1: 今日平滑曲线 (修复语法错误)"""
     try:
         now_utc = datetime.datetime.utcnow()
         now_bj = now_utc + datetime.timedelta(hours=8)
@@ -174,6 +174,48 @@ def render_smooth_trend(data_list):
 
         st.caption(f"🌊 今日心流 ({today_str})")
         
-        chart = alt.Chart(df).mark_line(interpolate='monotone', strokeWidth=3).encode(
+        # 【修复点】这里的 parenthesis 之前可能掉了，现已补全
+        chart = alt.Chart(df).mark_line(
+            interpolate='monotone', 
+            strokeWidth=3
+        ).encode(
             x=alt.X('Time:T', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
-            y=alt.Y('平静度', scale=alt.Scale(domain=[-5, 5]), t
+            y=alt.Y('平静度', scale=alt.Scale(domain=[-5, 5]), title=''),
+            color=alt.value('#11998e'),
+            tooltip=['Time:T', '平静度']
+        ).properties(height=120)
+        
+        st.altair_chart(chart, use_container_width=True)
+        
+    except Exception as e:
+        st.warning(f"图表加载中... ({str(e)})")
+
+def render_focus_map(data_list):
+    """Tab 2: 注意力地图"""
+    try:
+        now_utc = datetime.datetime.utcnow()
+        now_bj = now_utc + datetime.timedelta(hours=8)
+        
+        start_of_day = now_bj.replace(hour=0, minute=0, second=0)
+        end_of_day = now_bj.replace(hour=23, minute=59, second=59)
+        today_str = now_bj.strftime('%Y-%m-%d')
+        
+        processed_data = []
+        if data_list:
+            for item in data_list:
+                try:
+                    created_at = parse_to_beijing(item['created_at'])
+                    
+                    if created_at.strftime('%Y-%m-%d') == today_str:
+                        res = item['ai_result']
+                        if isinstance(res, str): res = json.loads(res)
+                        focus = res.get('focus_analysis', {})
+                        time_orient = focus.get('time_orientation', 'Present')
+                        target_orient = focus.get('focus_target', 'Internal')
+                        
+                        y_map = {"Past": 3, "Present": 2, "Future": 1}
+                        t_check = str(target_orient).strip().lower()
+                        color_hex = "#FF9800" if "external" in t_check else "#9C27B0"
+                        
+                        processed_data.append({
+                            "Time": created_at,
