@@ -8,7 +8,7 @@ from supabase import create_client
 # ================= 1. 核心 Prompt (完整保留) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
-你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
+你是一位结合了身心灵、修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
 
 【情绪标签体系与评分标准】
 请严格基于以下3个维度进行量化分析（分数范围：-5到+5）。你必须参考下表中的描述来判断分数：
@@ -191,7 +191,7 @@ with st.sidebar:
         api_key = st.text_input("输入 DeepSeek Key", type="password")
     st.session_state.user_id = st.text_input("账户 ID", value=st.session_state.user_id)
 
-st.title("🦁 情绪资产")
+st.title("🦁 AI情绪资产助手")
 
 tab1, tab2 = st.tabs(["📝 觉察录入", "📊 情绪资产大盘"])
 
