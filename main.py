@@ -8,7 +8,7 @@ import re
 import altair as alt
 from supabase import create_client
 
-# ================= 1. 核心 Prompt (保持不变) =================
+# ================= 1. 核心 Prompt =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
 你是一位结合了身心灵修行理论、实修、数据分析的“情绪资产管理专家”和“NVC心理咨询师”。
@@ -82,7 +82,8 @@ def save_to_db(user_id, text, json_result):
             }).execute()
         except: pass
 
-def get_history(user_id, limit=50):
+# 【修改点】Limit 提高到 200，防止今天的数据被旧数据挤出去
+def get_history(user_id, limit=200):
     sb = init_supabase()
     if sb:
         try:
@@ -129,10 +130,9 @@ def get_gauge_html(label, score, icon, theme="peace"):
     
     return f"<div style='display: flex; flex-direction: column; align-items: center; width: 80px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; top: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>+5</div><div style='position: absolute; top: 50%; transform: translateY(-50%); left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>0</div><div style='position: absolute; bottom: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>-5</div><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s; z-index: 1;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
-# ================= 5. 图表函数 (类型一致性修复版) =================
+# ================= 5. 图表函数 (带调试信息版) =================
 
 def parse_to_beijing(t_str):
-    """返回 datetime 对象，而非字符串"""
     try:
         dt = pd.to_datetime(t_str)
         if dt.tzinfo is not None:
@@ -149,7 +149,6 @@ def render_smooth_trend(data_list):
         now_bj = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
         today_str = now_bj.strftime('%Y-%m-%d')
         
-        # 保持为 datetime 对象，不要转字符串
         start_of_day = now_bj.replace(hour=0, minute=0, second=0, microsecond=0)
         end_of_day = now_bj.replace(hour=23, minute=59, second=59, microsecond=0)
 
@@ -162,27 +161,25 @@ def render_smooth_trend(data_list):
                         res = item['ai_result']
                         if isinstance(res, str): res = json.loads(res)
                         df_list.append({
-                            "Time": dt, # 保持对象
+                            "Time": dt, 
                             "平静度": res['scores'].get('平静度', 0)
                         })
                 except: continue
         
         if not df_list:
+             # 空数据也要画出坐标轴，避免报错
              df = pd.DataFrame([
                  {"Time": start_of_day, "平静度": 0},
                  {"Time": end_of_day, "平静度": 0}
              ])
-             df['opacity'] = 0 # 没数据透明
+             df['opacity'] = 0
         else:
              df = pd.DataFrame(df_list)
              df['opacity'] = 1
 
         st.caption(f"🌊 今日心流 ({today_str})")
         
-        chart = alt.Chart(df).mark_line(
-            interpolate='monotone', 
-            strokeWidth=3
-        ).encode(
+        chart = alt.Chart(df).mark_line(interpolate='monotone', strokeWidth=3).encode(
             x=alt.X('Time:T', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
             y=alt.Y('平静度', scale=alt.Scale(domain=[-5, 5]), title=''),
             color=alt.value('#11998e'),
@@ -196,22 +193,24 @@ def render_smooth_trend(data_list):
         st.warning(f"图表加载中... ({str(e)})")
 
 def render_focus_map(data_list):
-    """Tab 2: 注意力地图 (类型一致性修复)"""
+    """Tab 2: 注意力地图 (修复版 + 调试)"""
     try:
         now_bj = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
         today_str = now_bj.strftime('%Y-%m-%d')
         
-        # 保持为 datetime 对象
-        start_of_day = now_bj.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_of_day = now_bj.replace(hour=23, minute=59, second=59, microsecond=0)
+        start_of_day = now_bj.replace(hour=0, minute=0, second=0)
+        end_of_day = now_bj.replace(hour=23, minute=59, second=59)
         
         processed_data = []
+        debug_today_count = 0 # 调试计数器
+        
         if data_list:
             for item in data_list:
                 try:
                     dt = parse_to_beijing(item['created_at'])
                     
                     if dt.strftime('%Y-%m-%d') == today_str:
+                        debug_today_count += 1 # 统计今天的条数
                         res = item['ai_result']
                         if isinstance(res, str): res = json.loads(res)
                         focus = res.get('focus_analysis', {})
@@ -223,7 +222,7 @@ def render_focus_map(data_list):
                         color_hex = "#FF9800" if "external" in t_check else "#9C27B0"
                         
                         processed_data.append({
-                            "Time": dt, # 保持对象
+                            "Time": dt,
                             "Y_Val": y_map.get(time_orient, 2),
                             "Target": target_orient,
                             "Color": color_hex,
@@ -231,27 +230,26 @@ def render_focus_map(data_list):
                         })
                 except: continue
         
-        # 处理空数据
+        # 存入 session_state 供底部调试使用
+        st.session_state['debug_info'] = {
+            "today_str": today_str,
+            "total_fetched": len(data_list) if data_list else 0,
+            "today_count": debug_today_count,
+            "plot_data_len": len(processed_data)
+        }
+
         if not processed_data:
-            # 创建一个空的 DataFrame，但必须带有正确的列名和类型
-            df = pd.DataFrame({
-                'Time': pd.to_datetime([start_of_day]), # 强制时间类型
-                'Y_Val': [2], 
-                'Color': ['#fff']
-            })
-            # 标记为空，不画点，只画背景
+            df = pd.DataFrame({'Time': [start_of_day], 'Y_Val': [2], 'Color': ['#fff']})
             draw_points = False
         else:
             df = pd.DataFrame(processed_data)
             draw_points = True
 
-        # --- 背景层 ---
         bg_data = pd.DataFrame([
             {"y_start": 2.5, "y_end": 3.5, "y_mid": 3, "color": "#F2F4F6", "label": "过去 Past"},
             {"y_start": 1.5, "y_end": 2.5, "y_mid": 2, "color": "#F3E5F5", "label": "当下 Present"},
             {"y_start": 0.5, "y_end": 1.5, "y_mid": 1, "color": "#E1F5FE", "label": "未来 Future"},
         ])
-        # 关键：背景的时间范围也必须是 datetime 对象
         bg_data['x_start'] = start_of_day
         bg_data['x_end'] = end_of_day
         
@@ -271,10 +269,8 @@ def render_focus_map(data_list):
             text='label'
         )
         
-        # 组合图表
         final_chart = background + text_layer
         
-        # --- 只有当有真实数据时，才叠加散点层 ---
         if draw_points:
             points = alt.Chart(df).mark_circle(size=150, opacity=0.9).encode(
                 x=alt.X('Time:T', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
@@ -397,5 +393,10 @@ with tab2:
             </span></p>
         </div>
         """, unsafe_allow_html=True)
+        
+        # 【开发者调试窗口】(仅供查错，正常运行后可删除)
+        if 'debug_info' in st.session_state:
+            with st.expander("🛠️ 开发人员调试信息 (截图给我)"):
+                st.json(st.session_state['debug_info'])
     else:
         st.info("暂无数据，请先去首页记录。")
