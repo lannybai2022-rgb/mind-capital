@@ -117,7 +117,7 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e), "raw_content": content}
 
-# ================= 4. 视觉组件 (右侧刻度版) =================
+# ================= 4. 视觉组件 (Gauge) =================
 def get_gauge_html(label, score, icon, theme="peace"):
     percent = (score + 5) * 10
     colors = {
@@ -129,7 +129,7 @@ def get_gauge_html(label, score, icon, theme="peace"):
     
     return f"<div style='display: flex; flex-direction: column; align-items: center; width: 80px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; top: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>+5</div><div style='position: absolute; top: 50%; transform: translateY(-50%); left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>0</div><div style='position: absolute; bottom: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>-5</div><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s; z-index: 1;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
-# ================= 5. 修复版图表函数 =================
+# ================= 5. 图表函数 (优化：文字提示 & 样式迁移) =================
 
 def get_beijing_now():
     return datetime.datetime.utcnow() + datetime.timedelta(hours=8)
@@ -145,14 +145,12 @@ def render_smooth_trend(data_list):
     if data_list:
         for item in data_list:
             try:
-                # 统一转为北京时间
                 created_at = pd.to_datetime(item['created_at'])
                 if created_at.tzinfo:
                     created_at = created_at.tz_convert('Asia/Shanghai').tz_localize(None)
                 else:
                     created_at = created_at + pd.Timedelta(hours=8)
                 
-                # 【关键过滤】只保留今天的记录
                 if created_at.strftime('%Y-%m-%d') == today_str:
                     res = item['ai_result']
                     if isinstance(res, str): res = json.loads(res)
@@ -180,7 +178,7 @@ def render_smooth_trend(data_list):
 
 
 def render_focus_map(data_list):
-    """Tab 2: 注意力地图 (修复数据过滤bug)"""
+    """Tab 2: 注意力地图 (新增：背景文字提示)"""
     
     now_bj = get_beijing_now()
     start_of_day = now_bj.replace(hour=0, minute=0, second=0)
@@ -191,14 +189,12 @@ def render_focus_map(data_list):
     if data_list:
         for item in data_list:
             try:
-                # 统一转为北京时间
                 created_at = pd.to_datetime(item['created_at'])
                 if created_at.tzinfo:
                     created_at = created_at.tz_convert('Asia/Shanghai').tz_localize(None)
                 else:
                     created_at = created_at + pd.Timedelta(hours=8)
                 
-                # 【核心修复】这里必须加日期过滤，否则昨天的旧数据会出现在今天的图表里（显示为19:00等）
                 if created_at.strftime('%Y-%m-%d') == today_str:
                     res = item['ai_result']
                     if isinstance(res, str): res = json.loads(res)
@@ -207,8 +203,6 @@ def render_focus_map(data_list):
                     target_orient = focus.get('focus_target', 'Internal')
                     
                     y_map = {"Past": 3, "Present": 2, "Future": 1}
-                    
-                    # 颜色逻辑：宽容匹配
                     t_check = str(target_orient).strip().lower()
                     color_hex = "#FF9800" if "external" in t_check else "#9C27B0"
                     
@@ -222,133 +216,32 @@ def render_focus_map(data_list):
             except: continue
             
     if not processed_data:
-        # 空状态
         df = pd.DataFrame({'Time': [start_of_day], 'Y_Val': [2], 'Color': ['#fff']})
     else:
         df = pd.DataFrame(processed_data)
 
+    # 【新增】增加了 y_mid 字段，用于定位文字标签
     bg_data = pd.DataFrame([
-        {"start": 2.5, "end": 3.5, "color": "#F2F4F6", "label": "过去"},
-        {"start": 1.5, "end": 2.5, "color": "#F3E5F5", "label": "当下"},
-        {"start": 0.5, "end": 1.5, "color": "#E1F5FE", "label": "未来"},
+        {"start": 2.5, "end": 3.5, "y_mid": 3, "color": "#F2F4F6", "label": "过去 Past"},
+        {"start": 1.5, "end": 2.5, "y_mid": 2, "color": "#F3E5F5", "label": "当下 Present"},
+        {"start": 0.5, "end": 1.5, "y_mid": 1, "color": "#E1F5FE", "label": "未来 Future"},
     ])
     
+    # 1. 背景色带
     background = alt.Chart(bg_data).mark_rect(opacity=0.8).encode(
         x=alt.value(0), x2=alt.value(800),
         y=alt.Y('start', scale=alt.Scale(domain=[0.5, 3.5]), axis=None),
         y2='end', color=alt.Color('color', scale=None)
     )
     
-    points = alt.Chart(df).mark_circle(size=150, opacity=0.9).encode(
-        x=alt.X('Time', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
-        y=alt.Y('Y_Val', title='', axis=alt.Axis(tickCount=3, values=[1, 2, 3], labelExpr="datum.value == 3 ? '过去' : datum.value == 2 ? '当下' : '未来'")),
-        color=alt.Color('Color', scale=None),
-        tooltip=['Time', 'Summary', 'Target']
+    # 2. 【新增】背景文字提示 (如 "过去", "未来")
+    text_layer = alt.Chart(bg_data).mark_text(
+        align='left', baseline='middle', dx=10, color='#B0BEC5', fontSize=14, fontWeight='bold'
+    ).encode(
+        x=alt.value(0),
+        y=alt.Y('y_mid', scale=alt.Scale(domain=[0.5, 3.5])),
+        text='label'
     )
-
-    st.altair_chart((background + points).properties(height=300).interactive(), use_container_width=True)
-    st.caption("说明：🟣 紫点=关注内在 | 🟠 橙点=关注外在")
-
-# ================= 6. 主程序 =================
-st.set_page_config(page_title="AI情绪资产助手", page_icon="🦁", layout="centered")
-
-st.markdown("""
-<style>
-    .stTextArea textarea { font-size: 16px !important; border-radius: 10px; }
-    .stButton button { width: 100%; border-radius: 8px; height: 45px; font-weight: bold; }
-    .block-container { padding-top: 1rem; padding-bottom: 3rem; }
-</style>
-""", unsafe_allow_html=True)
-
-if "user_id" not in st.session_state: st.session_state.user_id = "guest_001"
-
-with st.sidebar:
-    st.header("⚙️ 设置")
-    if "OPENAI_API_KEY" in st.secrets:
-        api_key = st.secrets["OPENAI_API_KEY"]
-        st.success("✅ 已连接")
-    else:
-        api_key = st.text_input("DeepSeek Key", type="password")
-    st.session_state.user_id = st.text_input("账户 ID", value=st.session_state.user_id)
-
-st.title("🦁 AI情绪资产助手")
-
-history_data = get_history(st.session_state.user_id)
-
-tab1, tab2 = st.tabs(["📝 觉察录入", "🗺️ 注意力地图"])
-
-# --- Tab 1 ---
-with tab1:
-    render_smooth_trend(history_data)
-    st.write("")
     
-    user_input = st.text_area("", height=100, placeholder="在此记录当下身心感受...")
-    
-    if st.button("⚡️ 铸造资产", type="primary"):
-        if not user_input or not api_key:
-            st.toast("⚠️ 请输入内容或 Key")
-        else:
-            with st.spinner("🧠 AI 正在侦测注意力坐标并进行 NVC 转化..."):
-                result = analyze_emotion(user_input, api_key)
-                if "error" in result:
-                    st.error("系统故障")
-                    with st.expander("详情"): st.code(result.get('raw_content'))
-                else:
-                    save_to_db(st.session_state.user_id, user_input, result)
-                    st.toast("✅ 觉察已铸造")
-                    st.rerun()
-
-    if history_data:
-        latest_res = history_data[0]['ai_result']
-        if isinstance(latest_res, str): latest_res = json.loads(latest_res)
-        
-        st.write("---")
-        st.info(f"📝 最近记录: {latest_res.get('summary')}")
-        
-        sc = latest_res.get("scores", {})
-        h1 = get_gauge_html("平静度", sc.get("平静度", 0), "🕊️", "peace")
-        h2 = get_gauge_html("觉察度", sc.get("觉察度", 0), "👁️", "awareness")
-        h3 = get_gauge_html("能量值", sc.get("能量水平", 0), "🔋", "energy")
-        st.markdown(f"<div style='display: flex; justify-content: space-around; align-items: flex-end; margin: 20px 0; width: 100%;'>{h1}{h2}{h3}</div>", unsafe_allow_html=True)
-        
-        nvc = latest_res.get("nvc_guide", {})
-        if nvc:
-            st.markdown(f"""
-            <div style="background-color:#f3e5f5; padding:15px; border-radius:10px; border-left: 5px solid #9c27b0; margin-bottom: 20px; color: #4a148c;">
-                <p style="margin-bottom: 4px; font-size: 14px;"><b>👁️ 观察:</b> {nvc.get('observation')}</p>
-                <p style="margin-bottom: 4px; font-size: 14px;"><b>❤️ 感受:</b> {nvc.get('feeling')}</p>
-                <p style="margin-bottom: 4px; font-size: 14px;"><b>🌱 需要:</b> {nvc.get('need')}</p>
-                <hr style="border-top: 1px dashed #ce93d8; margin: 8px 0;">
-                <p style="font-style: italic; font-weight: bold;">" {nvc.get('empathy_response')} "</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with st.expander("💡 深度洞察", expanded=True):
-            for insight in latest_res.get('key_insights', []):
-                st.markdown(f"**•** {insight}")
-
-# --- Tab 2 ---
-with tab2:
-    st.subheader("🗺️ 你的注意力去了哪里？")
-    if st.button("🔄 刷新"): st.rerun()
-    
-    render_focus_map(history_data)
-    
-    if history_data:
-        latest_nvc = history_data[0]['ai_result']
-        if isinstance(latest_nvc, str): latest_nvc = json.loads(latest_nvc)
-        nvc = latest_nvc.get("nvc_guide", {})
-        
-        st.markdown("### 🦒 AI 陪伴旁白")
-        st.info("此处展示基于你 **最近一次觉察** 的深度解读：")
-        
-        st.markdown(f"""
-        <div style="border: 1px solid #ddd; border-radius: 10px; padding: 15px; background: #fff;">
-            <p>AI 咨询师轻声对你说：<br>
-            <span style="color: #6a1b9a; font-style: italic; font-weight: bold; font-size: 18px; line-height: 1.5;">
-            “ {nvc.get('empathy_response', '保持觉察，回到当下...')} ”
-            </span></p>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("暂无数据，请先去首页记录。")
+    # 3. 数据点
+    points = a
