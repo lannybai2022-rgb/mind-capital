@@ -5,7 +5,7 @@ import datetime
 import pandas as pd
 from supabase import create_client
 
-# ================= 1. 核心 Prompt (完全还原你的严格标准) =================
+# ================= 1. 核心 Prompt (保持不变，严格标准) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
 你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。
@@ -121,43 +121,80 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e)}
 
-# ================= 4. 高级 UI 组件 (双向进度条) =================
+# ================= 4. 全新视觉组件：纵向霍金森能量柱 =================
 
-def render_tech_bar(label, score, icon):
+def render_vertical_gauge(label, score, icon):
     """
-    渲染双向能量条：左红右绿，中间为0
+    渲染纵向能量柱 (Hawkins Style)
+    Score: -5 到 +5
     """
-    width_percent = abs(score) * 10 
+    # 映射逻辑：把 -5到+5 映射到 0%到100% 的高度
+    # -5 => 0%, 0 => 50%, +5 => 100%
+    percent = (score + 5) * 10
     
-    if score > 0:
-        bar_color = "linear-gradient(90deg, #00b09b 0%, #96c93d 100%)" # 绿
-        position_left = "50%"
-        border_radius = "0 4px 4px 0"
-        value_color = "#27ae60"
-        prefix = "+"
-    elif score < 0:
-        bar_color = "linear-gradient(90deg, #ff5f6d 0%, #ffc371 100%)" # 红
-        position_left = f"{50 - width_percent}%"
-        border_radius = "4px 0 0 4px"
-        value_color = "#e74c3c"
-        prefix = ""
+    # 颜色逻辑 (参考霍金森能量表色谱)
+    # 低频(负分): 红/橙/褐
+    # 中频(0分): 灰/蓝
+    # 高频(正分): 亮绿/青/紫/金
+    
+    if score <= -3:
+        # 羞愧/内疚/冷漠区
+        color = "linear-gradient(to top, #8B0000, #FF4500)" 
+        text_color = "#FF4500"
+    elif -3 < score < 0:
+        # 恐惧/欲望/愤怒区
+        color = "linear-gradient(to top, #FF8C00, #FFD700)"
+        text_color = "#E67E22"
+    elif score == 0:
+        # 中性
+        color = "#BDC3C7"
+        text_color = "#7F8C8D"
+    elif 0 < score <= 3:
+        # 宽容/理智区
+        color = "linear-gradient(to top, #3498DB, #2ECC71)"
+        text_color = "#2ECC71"
     else:
-        bar_color = "#ddd"
-        position_left = "50%"
-        width_percent = 0
-        border_radius = "0"
-        value_color = "#95a5a6"
-        prefix = ""
+        # 爱/喜悦/开悟区
+        color = "linear-gradient(to top, #9B59B6, #00FFFF)"
+        text_color = "#9B59B6"
 
+    # 纵向柱状图 HTML
     html_code = f"""
-    <div style="margin-bottom: 12px; font-family: 'Source Sans Pro', sans-serif;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <span style="font-weight: 600; font-size: 14px; color: #4a4a4a;">{icon} {label}</span>
-            <span style="font-weight: 700; font-size: 16px; color: {value_color};">{prefix}{score}</span>
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;">
+        <!-- 分数值 -->
+        <div style="font-size: 24px; font-weight: 800; color: {text_color}; margin-bottom: 8px; font-family: sans-serif;">
+            {score}
         </div>
-        <div style="width: 100%; background-color: #f0f2f6; height: 10px; border-radius: 5px; position: relative; overflow: hidden;">
-            <div style="position: absolute; left: 50%; width: 2px; height: 100%; background-color: #d1d5db; z-index: 1; opacity: 0.5;"></div>
-            <div style="position: absolute; height: 100%; left: {position_left}; width: {width_percent}%; background: {bar_color}; border-radius: {border_radius}; transition: all 0.6s ease;"></div>
+        
+        <!-- 能量槽容器 -->
+        <div style="
+            height: 160px; 
+            width: 40px; 
+            background-color: #f0f2f6; 
+            border-radius: 20px; 
+            position: relative; 
+            overflow: hidden;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);
+        ">
+            <!-- 动态能量液 -->
+            <div style="
+                position: absolute; 
+                bottom: 0; 
+                left: 0; 
+                width: 100%; 
+                height: {percent}%; 
+                background: {color}; 
+                border-radius: 0 0 20px 20px;
+                transition: height 1s cubic-bezier(0.25, 0.8, 0.25, 1);
+            "></div>
+            
+            <!-- 刻度线 (装饰) -->
+            <div style="position: absolute; bottom: 50%; width: 100%; height: 1px; background: rgba(255,255,255,0.5);"></div>
+        </div>
+        
+        <!-- 标签 -->
+        <div style="margin-top: 12px; font-weight: 600; color: #555; font-size: 14px; text-align: center;">
+            {icon}<br>{label}
         </div>
     </div>
     """
@@ -166,7 +203,7 @@ def render_tech_bar(label, score, icon):
 # ================= 5. 前端页面主逻辑 =================
 st.set_page_config(page_title="Mind Assets", page_icon="🦁", layout="centered")
 
-# CSS 注入
+# CSS 优化
 st.markdown("""
 <style>
     .stTextArea textarea { font-size: 16px !important; border-radius: 10px; }
@@ -187,44 +224,53 @@ with st.sidebar:
     st.session_state.user_id = st.text_input("账户 ID", value=st.session_state.user_id)
 
 st.title("🦁 情绪资产")
-st.caption("将每一次心跳，量化为可增值的心灵财富")
+# st.caption("将每一次心跳，量化为可增值的心灵财富") 
 
-tab1, tab2 = st.tabs(["⚡️ 资产铸造 (录入)", "📊 趋势大盘 (报表)"])
+# 1. 修改文案：Tab 名称
+tab1, tab2 = st.tabs(["📝 觉察录入", "📊 资产报表"])
 
 # --- Tab 1: 录入 ---
 with tab1:
     st.write("")
-    user_input = st.text_area("✍️ 记录当下的觉察...", height=120, placeholder="在此输入你的心流记录...")
+    # 2. 修改文案：Label
+    user_input = st.text_area("记录当下的感受...", height=120, placeholder="在此输入你的觉察记录...")
     
-    if st.button("⚡️ 铸造情绪资产 (Mint Assets)", type="primary"):
+    if st.button("⚡️ 提交审计", type="primary"):
         if not user_input or not api_key:
             st.toast("⚠️ 请输入内容或检查 Key")
         else:
-            with st.spinner("🤖 AI 正在进行深度量化审计..."):
+            with st.spinner("🤖 AI 正在进行霍金森能量层级分析..."):
                 result = analyze_emotion(user_input, api_key)
                 
                 if "error" in result:
                     st.error(f"系统故障: {result['error']}")
                 else:
                     save_to_db(st.session_state.user_id, user_input, result)
-                    st.toast("✅ 资产已上链存证！")
+                    st.toast("✅ 觉察已记录")
                     
                     # === 结果展示 ===
                     st.markdown(f"""
-                    <div style="background-color:#e8f4f8; padding:15px; border-radius:8px; border-left: 5px solid #3498db; margin-bottom: 20px;">
-                        <span style="font-size:18px;">📝</span> 
-                        <span style="font-weight:500; color:#2c3e50;">{result.get('summary')}</span>
+                    <div style="background-color:#f8f9fa; padding:15px; border-radius:8px; margin-bottom: 25px; color: #444; line-height: 1.6;">
+                        {result.get('summary')}
                     </div>
                     """, unsafe_allow_html=True)
 
-                    with st.container():
-                        st.markdown("### 📊 资产穿透分析")
-                        sc = result.get("scores", {})
-                        render_tech_bar("平静度 (Peace)", sc.get("平静度", 0), "🕊️")
-                        render_tech_bar("觉察度 (Awareness)", sc.get("觉察度", 0), "👁️")
-                        render_tech_bar("能量值 (Energy)", sc.get("能量水平", 0), "🔋")
+                    # 3. 核心视觉：三列布局 + 纵向能量柱
+                    st.markdown("### 📊 能量层级 (Energy Levels)")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    sc = result.get("scores", {})
+                    
+                    with col1:
+                        render_vertical_gauge("平静度", sc.get("平静度", 0), "🕊️")
+                    with col2:
+                        render_vertical_gauge("觉察度", sc.get("觉察度", 0), "👁️")
+                    with col3:
+                        render_vertical_gauge("能量值", sc.get("能量水平", 0), "🔋")
 
-                    st.write("")
+                    st.write("---")
+                    
+                    # 洞察与建议
                     with st.expander("💡 深度洞察 (Deep Insights)", expanded=True):
                         for insight in result.get('key_insights', []):
                             st.markdown(f"**•** {insight}")
@@ -238,7 +284,7 @@ with tab1:
 
 # --- Tab 2: 报表 ---
 with tab2:
-    st.subheader("📈 资产K线图")
+    st.subheader("📈 能量走势")
     if st.button("🔄 刷新大盘"):
         st.rerun()
     
