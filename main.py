@@ -129,10 +129,9 @@ def get_gauge_html(label, score, icon, theme="peace"):
     
     return f"<div style='display: flex; flex-direction: column; align-items: center; width: 80px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; top: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>+5</div><div style='position: absolute; top: 50%; transform: translateY(-50%); left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>0</div><div style='position: absolute; bottom: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>-5</div><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s; z-index: 1;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
-# ================= 5. 稳健图表函数 (修复语法错误 + 修复图表空白) =================
+# ================= 5. 图表函数 (坐标系彻底修复版) =================
 
 def parse_to_beijing(t_str):
-    """全自动时间清洗机"""
     try:
         dt = pd.to_datetime(t_str)
         if dt.tzinfo is not None:
@@ -144,7 +143,7 @@ def parse_to_beijing(t_str):
         return datetime.datetime.now()
 
 def render_smooth_trend(data_list):
-    """Tab 1: 今日平滑曲线 (修复缩进错误)"""
+    """Tab 1: 今日平滑曲线"""
     try:
         now_utc = datetime.datetime.utcnow()
         now_bj = now_utc + datetime.timedelta(hours=8)
@@ -164,8 +163,7 @@ def render_smooth_trend(data_list):
                             "Time": created_at,
                             "平静度": res['scores'].get('平静度', 0)
                         })
-                except:
-                    continue # 这里的缩进现在是正确的，不会报错了
+                except: continue
         
         if not df_list: 
              df = pd.DataFrame({'Time': [start_of_day, end_of_day], '平静度': [0, 0]})
@@ -190,7 +188,7 @@ def render_smooth_trend(data_list):
         st.warning(f"图表加载中... ({str(e)})")
 
 def render_focus_map(data_list):
-    """Tab 2: 注意力地图 (修复图表空白bug：统一坐标轴)"""
+    """Tab 2: 注意力地图 (坐标系统一修复版)"""
     try:
         now_utc = datetime.datetime.utcnow()
         now_bj = now_utc + datetime.timedelta(hours=8)
@@ -204,6 +202,7 @@ def render_focus_map(data_list):
                 try:
                     created_at = parse_to_beijing(item['created_at'])
                     
+                    # 只看今天的数据
                     if created_at.strftime('%Y-%m-%d') == today_str:
                         res = item['ai_result']
                         if isinstance(res, str): res = json.loads(res)
@@ -223,26 +222,24 @@ def render_focus_map(data_list):
                             "Summary": res.get('summary', '')
                         })
                 except:
-                    continue # 修复缩进
+                    continue
                 
         if not processed_data:
-            # 如果没数据，造一个空点，保证图表不报错
             df = pd.DataFrame({'Time': [start_of_day], 'Y_Val': [2], 'Color': ['#fff']})
         else:
             df = pd.DataFrame(processed_data)
 
-        # 【核心修复逻辑】
-        # 给背景数据也加上明确的时间段 (start_of_day 到 end_of_day)
-        # 这样背景层和散点层就共用同一个时间轴，绝对不会打架了！
+        # 【核心修复】：让背景层也拥有时间坐标，与散点层强行统一
         bg_data = pd.DataFrame([
             {"y_start": 2.5, "y_end": 3.5, "y_mid": 3, "color": "#F2F4F6", "label": "过去 Past"},
             {"y_start": 1.5, "y_end": 2.5, "y_mid": 2, "color": "#F3E5F5", "label": "当下 Present"},
             {"y_start": 0.5, "y_end": 1.5, "y_mid": 1, "color": "#E1F5FE", "label": "未来 Future"},
         ])
+        # 关键：给每一行背景数据都加上今天的开始和结束时间
         bg_data['x_start'] = start_of_day
         bg_data['x_end'] = end_of_day
         
-        # 1. 背景层：使用 x_start 和 x_end 铺满全天
+        # 1. 背景层：使用时间轴 x_start 和 x_end
         background = alt.Chart(bg_data).mark_rect(opacity=0.8).encode(
             x=alt.X('x_start:T', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=None),
             x2='x_end:T',
@@ -251,7 +248,7 @@ def render_focus_map(data_list):
             color=alt.Color('color', scale=None)
         )
         
-        # 2. 文字层
+        # 2. 文字层：使用时间轴，定位在开始时间
         text_layer = alt.Chart(bg_data).mark_text(
             align='left', baseline='middle', dx=10, color='#B0BEC5', fontSize=14, fontWeight='bold'
         ).encode(
@@ -260,7 +257,7 @@ def render_focus_map(data_list):
             text='label'
         )
         
-        # 3. 散点层
+        # 3. 散点层：使用数据的时间轴
         points = alt.Chart(df).mark_circle(size=150, opacity=0.9).encode(
             x=alt.X('Time:T', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
             y=alt.Y('Y_Val', title='', axis=None),
@@ -268,6 +265,7 @@ def render_focus_map(data_list):
             tooltip=['Time:T', 'Summary', 'Target']
         )
 
+        # 组合图表 (所有图层共享同一个时间域，解决冲突)
         st.altair_chart((background + text_layer + points).properties(height=300).interactive(), use_container_width=True)
         st.caption("说明：🟣 紫点=关注内在 | 🟠 橙点=关注外在")
         
@@ -298,6 +296,7 @@ with st.sidebar:
 
 st.title("🦁 AI情绪资产助手")
 
+# 数据库容错
 try:
     history_data = get_history(st.session_state.user_id)
 except:
