@@ -221,7 +221,7 @@ with tab1:
                     """, unsafe_allow_html=True)
 
                     # 3. 核心视觉
-                    st.markdown("### 📊 能量层级 (Energy Levels)")
+                    st.markdown("### 📊 情绪资产水平 ")
                     col1, col2, col3 = st.columns(3)
                     
                     sc = result.get("scores", {})
