@@ -7,7 +7,7 @@ import traceback
 import re
 from supabase import create_client
 
-# ================= 1. 核心 Prompt (完整保留，一字未改) =================
+# ================= 1. 核心 Prompt (严谨完整版，一字未改) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
 你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
@@ -132,7 +132,7 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e), "raw_content": content}
 
-# ================= 4. 视觉组件 (修复缩进问题和样式变形) =================
+# ================= 4. 视觉组件 (修复：移除那条白线) =================
 def get_gauge_html(label, score, icon, theme="peace"):
     percent = (score + 5) * 10
     
@@ -143,12 +143,14 @@ def get_gauge_html(label, score, icon, theme="peace"):
     }
     c = colors.get(theme, colors["peace"])
     
-    # 修复：去掉 flex:1，恢复 width: 40px，去掉缩进防止 markdown 渲染错误
+    # 修复点：删除了 <div ... background: rgba(255,255,255,0.8) ...> 那一行
     return f"""
 <div style="display: flex; flex-direction: column; align-items: center; width: 60px;">
     <div style="height: 160px; width: 36px; background: #f0f2f6; border-radius: 18px; position: relative; margin-top: 5px;">
         <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 18px; transition: height 0.8s;"></div>
-        <div style="position: absolute; bottom: 50%; width: 100%; height: 1px; background: rgba(255,255,255,0.8);"></div>
+        
+        <!-- 注意：这里原先那行白线代码已经被彻底删除了 -->
+        
         <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); 
                     background: #fff; color: {c[2]}; font-weight: bold; font-size: 12px; 
                     padding: 1px 4px; border-radius: 6px; border: 1px solid {c[2]}; 
@@ -217,14 +219,7 @@ with tab1:
                     h2 = get_gauge_html("觉察度", sc.get("觉察度", 0), "👁️", "awareness")
                     h3 = get_gauge_html("能量值", sc.get("能量水平", 0), "🔋", "energy")
                     
-                    # 修复点：这里去掉了缩进，且使用了 justify-content: space-around 实现完美横排
-                    container_html = f"""
-<div style="display: flex; justify-content: space-around; align-items: flex-end; margin: 20px 0; width: 100%;">
-{h1}
-{h2}
-{h3}
-</div>
-"""
+                    container_html = f"""<div style="display: flex; justify-content: space-around; align-items: flex-end; margin: 20px 0; width: 100%;">{h1}{h2}{h3}</div>"""
                     st.markdown(container_html, unsafe_allow_html=True)
 
                     st.write("---")
