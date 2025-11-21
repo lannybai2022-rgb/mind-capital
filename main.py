@@ -4,10 +4,10 @@ import json
 import datetime
 import pandas as pd
 import traceback
-import re # <--- 新增：用于修复 JSON
+import re
 from supabase import create_client
 
-# ================= 1. 核心 Prompt (完全恢复你的原版设定) =================
+# ================= 1. 核心 Prompt (这是完整版，保证 AI 智商在线) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
 你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
@@ -77,14 +77,12 @@ STRICT_SYSTEM_PROMPT = """
 }
 """
 
-# ================= 2. 数据库连接层 (保持原样) =================
+# ================= 2. 数据库连接层 (原样保留) =================
 @st.cache_resource
 def init_supabase():
     try:
         if "SUPABASE_URL" in st.secrets:
-            url = st.secrets["SUPABASE_URL"]
-            key = st.secrets["SUPABASE_KEY"]
-            return create_client(url, key)
+            return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     except:
         return None
     return None
@@ -98,11 +96,7 @@ def save_to_db(user_id, text, json_result):
                 "user_input": text,
                 "ai_result": json_result
             }).execute()
-            return True
-        except Exception as e:
-            st.error(f"保存失败: {str(e)}")
-            return False
-    return False
+        except: pass
 
 def get_history(user_id):
     sb = init_supabase()
@@ -110,23 +104,16 @@ def get_history(user_id):
         try:
             res = sb.table("emotion_logs").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(50).execute()
             return res.data
-        except:
-            return []
+        except: return []
     return []
 
-# ================= 3. AI 分析逻辑 (新增：正则清洗功能) =================
-
+# ================= 3. AI 分析逻辑 (含数据清洗) =================
 def clean_json_string(s):
-    """
-    清洗 AI 返回的字符串，修复 JSON 格式错误
-    """
-    # 1. 提取最外层大括号
+    """清洗 JSON 字符串，修复 AI 可能产生的格式错误"""
     match = re.search(r'\{[\s\S]*\}', s)
     if match:
         s = match.group()
-    
-    # 2. 正则去逗号：把 "key": value, } 替换为 "key": value }
-    # 很多时候 AI 会在最后一个字段后面多写一个逗号，导致 Python 解析失败
+    # 去除末尾逗号
     s = re.sub(r',\s*\}', '}', s)
     s = re.sub(r',\s*\]', ']', s)
     return s
@@ -136,7 +123,6 @@ def analyze_emotion(text, api_key):
         api_key=api_key, 
         base_url="https://api.deepseek.com"
     )
-    
     content = ""
     try:
         response = client.chat.completions.create(
@@ -145,69 +131,57 @@ def analyze_emotion(text, api_key):
                 {"role": "system", "content": STRICT_SYSTEM_PROMPT},
                 {"role": "user", "content": f"【输入文本】\n{text}"}
             ],
-            temperature=0.5,
+            temperature=0.4 # 稍微降低温度以保持格式稳定
         )
-        
         content = response.choices[0].message.content
-        
-        # === 使用清洗函数修复数据 ===
-        cleaned_content = clean_json_string(content)
-        return json.loads(cleaned_content)
-        
+        # 强力清洗
+        cleaned = clean_json_string(content)
+        return json.loads(cleaned)
     except Exception as e:
-        # 返回错误信息，方便调试
-        return {
-            "error": f"AI数据解析失败: {str(e)}", 
-            "raw_content": content
-        }
+        return {"error": str(e), "raw_content": content}
 
-# ================= 4. 视觉组件 (修改：适配手机横排) =================
-
-def render_vertical_gauge(label, score, icon, theme="peace"):
+# ================= 4. 视觉组件 (纯 HTML 生成器，用于强制横排) =================
+def get_gauge_html(label, score, icon, theme="peace"):
+    """
+    生成单个能量柱的 HTML 字符串。
+    """
     percent = (score + 5) * 10
     
-    if theme == "peace":
-        bg_gradient = "linear-gradient(to top, #11998e, #38ef7d)" 
-        text_color = "#11998e"
-    elif theme == "awareness":
-        bg_gradient = "linear-gradient(to top, #8E2DE2, #4A00E0)"
-        text_color = "#6a0dad"
-    elif theme == "energy":
-        bg_gradient = "linear-gradient(to top, #f12711, #f5af19)"
-        text_color = "#e67e22"
-    else:
-        bg_gradient = "#ccc"
-        text_color = "#333"
-
-    # 修改点：将 height 改为 150px (原220px)，宽度适配 flex 布局
-    html_code = f"""
-    <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
-        <div style="height: 160px; width: 36px; background-color: #f0f2f6; border-radius: 18px; position: relative; overflow: visible; margin-top: 10px;">
-            <div style="position: absolute; top:0; left:0; width:100%; height:100%; border-radius: 18px; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);">
-                <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: {percent}%; background: {bg_gradient}; transition: height 1s cubic-bezier(0.25, 0.8, 0.25, 1);"></div>
+    colors = {
+        "peace": ["#11998e", "#38ef7d", "#11998e"],
+        "awareness": ["#8E2DE2", "#4A00E0", "#6a0dad"],
+        "energy": ["#f12711", "#f5af19", "#e67e22"]
+    }
+    c = colors.get(theme, colors["peace"])
+    
+    # 使用 flex: 1 让每个柱子平均分配空间
+    return f"""
+    <div style="flex: 1; display: flex; flex-direction: column; align-items: center;">
+        <div style="height: 140px; width: 30px; background: #f0f2f6; border-radius: 15px; position: relative; margin-top: 5px;">
+            <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 15px; transition: height 0.8s;"></div>
+            <div style="position: absolute; bottom: 50%; width: 100%; height: 1px; background: rgba(255,255,255,0.8);"></div>
+            <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); 
+                        background: #fff; color: {c[2]}; font-weight: bold; font-size: 11px; 
+                        padding: 1px 4px; border-radius: 6px; border: 1px solid {c[2]}; 
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.15); z-index: 10; min-width: 20px; text-align: center;">
+                {score}
             </div>
-            <div style="position: absolute; bottom: 50%; width: 100%; height: 2px; background: rgba(255,255,255,0.8); z-index: 2;"></div>
-            <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {text_color}; font-weight: bold; font-size: 12px; padding: 2px 4px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5; min-width: 24px; text-align: center; border: 1px solid {text_color};">{score}</div>
         </div>
-        <div style="margin-top: 10px; font-weight: 600; color: #555; font-size: 13px; text-align: center;">{icon}<br>{label}</div>
+        <div style="margin-top: 6px; font-size: 12px; font-weight: bold; color: #666; text-align: center; line-height: 1.2;">
+            {icon}<br>{label}
+        </div>
     </div>
     """
-    st.markdown(html_code, unsafe_allow_html=True)
 
 # ================= 5. 主程序入口 =================
 st.set_page_config(page_title="AI情绪资产助手", page_icon="🦁", layout="centered")
 
-# === 新增 CSS：修复手机端列堆叠问题 ===
 st.markdown("""
 <style>
-    /* 强制手机上的列横向排列 */
-    [data-testid="column"] {
-        width: 33.33% !important;
-        flex: 1 1 33.33% !important;
-        min-width: 33.33% !important;
-    }
     .stTextArea textarea { font-size: 16px !important; border-radius: 10px; }
     .stButton button { width: 100%; border-radius: 8px; height: 45px; font-weight: bold; }
+    /* 调整顶部和底部的留白，让手机端第一眼看到更多内容 */
+    .block-container { padding-top: 2rem; padding-bottom: 3rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -230,7 +204,7 @@ tab1, tab2 = st.tabs(["📝 觉察录入", "📊 情绪资产大盘"])
 # --- Tab 1: 录入 ---
 with tab1:
     st.write("")
-    user_input = st.text_area("记录当下身心感受...", height=120, placeholder="在此输入你的觉察记录...")
+    user_input = st.text_area("记录当下身心感受...", height=100, placeholder="在此输入你的觉察记录...")
     
     if st.button("⚡️ 铸造情绪资产", type="primary"):
         if not user_input or not api_key:
@@ -240,37 +214,40 @@ with tab1:
                 result = analyze_emotion(user_input, api_key)
                 
                 if "error" in result:
-                    st.error(f"系统故障: {result['error']}")
-                    # 如果出错，显示原始内容以便排查
-                    with st.expander("查看 AI 返回的原始数据"):
+                    st.error("系统故障，请重试")
+                    with st.expander("查看详细报错"):
                         st.code(result.get('raw_content'))
                 else:
                     save_to_db(st.session_state.user_id, user_input, result)
                     st.toast("✅ 觉察已铸造")
                     
-                    # === 结果展示 ===
-                    st.markdown(f"""
-                    <div style="background-color:#f8f9fa; padding:15px; border-radius:8px; margin-bottom: 25px; color: #444; line-height: 1.6;">
-                        {result.get('summary')}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.info(f"📝 {result.get('summary')}")
 
-                    # 3. 核心视觉：纵向能量柱
-                    st.markdown("### 📊 情绪资产水平")
-                    col1, col2, col3 = st.columns(3)
+                    # === [核心修改点] ===
+                    # 不使用 st.columns，而是使用纯 HTML Flex 布局
+                    st.markdown("##### 📊 情绪资产水平")
                     
                     sc = result.get("scores", {})
                     
-                    with col1:
-                        render_vertical_gauge("平静度", sc.get("平静度", 0), "🕊️", theme="peace")
-                    with col2:
-                        render_vertical_gauge("觉察度", sc.get("觉察度", 0), "👁️", theme="awareness")
-                    with col3:
-                        render_vertical_gauge("能量值", sc.get("能量水平", 0), "🔋", theme="energy")
+                    # 1. 获取 HTML 片段
+                    h1 = get_gauge_html("平静度", sc.get("平静度", 0), "🕊️", "peace")
+                    h2 = get_gauge_html("觉察度", sc.get("觉察度", 0), "👁️", "awareness")
+                    h3 = get_gauge_html("能量值", sc.get("能量水平", 0), "🔋", "energy")
+                    
+                    # 2. 拼接容器：display: flex 确保横向排列
+                    container_html = f"""
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin: 20px 0;">
+                        {h1}
+                        {h2}
+                        {h3}
+                    </div>
+                    """
+                    st.markdown(container_html, unsafe_allow_html=True)
+                    # ===================
 
                     st.write("---")
                     
-                    with st.expander("💡 深度洞察 (Deep Insights)", expanded=True):
+                    with st.expander("💡 深度洞察 (Deep Insights)", expanded=False):
                         for insight in result.get('key_insights', []):
                             st.markdown(f"**•** {insight}")
                     
@@ -292,13 +269,10 @@ with tab2:
     if data:
         chart_data = []
         for item in data:
-            # 容错处理：防止历史脏数据导致图表挂掉
             try:
                 res = item['ai_result']
-                # 如果数据库里存的是字符串，先转成 JSON
-                if isinstance(res, str):
-                    res = json.loads(res)
-                    
+                if isinstance(res, str): res = json.loads(res)
+                
                 scores = res.get('scores', {})
                 utc_time = pd.to_datetime(item['created_at'])
                 bj_time = utc_time + pd.Timedelta(hours=8)
@@ -309,12 +283,10 @@ with tab2:
                     "觉察度": scores.get("觉察度", 0),
                     "能量": scores.get("能量水平", 0)
                 })
-            except:
-                continue
+            except: continue
         
         if chart_data:
-            df = pd.DataFrame(chart_data)
-            df = df.sort_values('时间')
+            df = pd.DataFrame(chart_data).sort_values('时间')
             st.line_chart(df, x='时间', y=['平静度', '觉察度', '能量'], color=["#2ecc71", "#9b59b6", "#e67e22"])
             
             st.markdown("---")
@@ -339,8 +311,7 @@ with tab2:
                         </small>
                         """, unsafe_allow_html=True)
                         st.info(f"建议: {res.get('recommendations', {}).get('身心灵调适建议')}")
-                except:
-                    continue
+                except: continue
         else:
              st.info("暂无有效数据")
     else:
