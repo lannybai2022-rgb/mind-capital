@@ -130,40 +130,81 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e)}
 
-# ================= 4. 修复版 UI 组件 (压缩HTML防止报错) =================
+# ================= 4. 视觉组件升级 (刻度+多色系+动态浮标) =================
 
-def render_vertical_gauge(label, score, icon):
+def render_vertical_gauge(label, score, icon, theme="peace"):
     """
-    渲染纵向能量柱 (无注释版)
+    渲染纵向能量柱 (带刻度、多色系、动态位置显示)
+    theme: 'peace'(绿/青), 'awareness'(紫), 'energy'(橙)
     """
+    # 映射 -5~+5 到 0~100%
     percent = (score + 5) * 10
     
-    # 颜色逻辑
-    if score <= -3:
-        color = "linear-gradient(to top, #8B0000, #FF4500)" 
-        text_color = "#FF4500"
-    elif -3 < score < 0:
-        color = "linear-gradient(to top, #FF8C00, #FFD700)"
-        text_color = "#E67E22"
-    elif score == 0:
-        color = "#BDC3C7"
-        text_color = "#7F8C8D"
-    elif 0 < score <= 3:
-        color = "linear-gradient(to top, #3498DB, #2ECC71)"
-        text_color = "#2ECC71"
+    # 颜色主题配置
+    if theme == "peace":
+        # 平静度：青绿色渐变
+        bg_gradient = "linear-gradient(to top, #11998e, #38ef7d)" 
+        text_color = "#11998e"
+    elif theme == "awareness":
+        # 觉察度：紫色渐变
+        bg_gradient = "linear-gradient(to top, #8E2DE2, #4A00E0)"
+        text_color = "#6a0dad"
+    elif theme == "energy":
+        # 能量：橙色渐变
+        bg_gradient = "linear-gradient(to top, #f12711, #f5af19)"
+        text_color = "#e67e22"
     else:
-        color = "linear-gradient(to top, #9B59B6, #00FFFF)"
-        text_color = "#9B59B6"
+        bg_gradient = "#ccc"
+        text_color = "#333"
 
-    # 紧凑版 HTML
+    # 压缩 HTML 以避免 Streamlit 渲染错误
     html_code = f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;">
-        <div style="font-size: 24px; font-weight: 800; color: {text_color}; margin-bottom: 8px; font-family: sans-serif;">{score}</div>
-        <div style="height: 160px; width: 40px; background-color: #f0f2f6; border-radius: 20px; position: relative; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);">
-            <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: {percent}%; background: {color}; border-radius: 0 0 20px 20px; transition: height 1s cubic-bezier(0.25, 0.8, 0.25, 1);"></div>
-            <div style="position: absolute; bottom: 50%; width: 100%; height: 1px; background: rgba(255,255,255,0.5);"></div>
+    <div style="display: flex; flex-direction: column; align-items: center; height: 220px; position: relative;">
+        
+        <!-- 能量柱主体 -->
+        <div style="height: 180px; width: 40px; background-color: #f0f2f6; border-radius: 20px; position: relative; overflow: visible; margin-top: 10px;">
+            
+            <!-- 内部槽 -->
+            <div style="position: absolute; top:0; left:0; width:100%; height:100%; border-radius: 20px; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);">
+                <!-- 动态液体 -->
+                <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: {percent}%; background: {bg_gradient}; transition: height 1s cubic-bezier(0.25, 0.8, 0.25, 1);"></div>
+            </div>
+
+            <!-- 0分刻度线 (中间) -->
+            <div style="position: absolute; bottom: 50%; width: 100%; height: 2px; background: rgba(255,255,255,0.8); z-index: 2;"></div>
+
+            <!-- 右侧刻度标签 -->
+            <div style="position: absolute; right: -30px; top: 0; font-size: 10px; color: #999;">+5</div>
+            <div style="position: absolute; right: -30px; top: 48%; font-size: 10px; color: #999;">0</div>
+            <div style="position: absolute; right: -30px; bottom: 0; font-size: 10px; color: #999;">-5</div>
+
+            <!-- 动态分数值浮标 (跟随液面) -->
+            <div style="
+                position: absolute; 
+                bottom: {percent}%; 
+                left: 50%; 
+                transform: translate(-50%, 50%); 
+                background: #fff; 
+                color: {text_color}; 
+                font-weight: bold; 
+                font-size: 14px; 
+                padding: 2px 8px; 
+                border-radius: 10px; 
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                z-index: 5;
+                min-width: 30px;
+                text-align: center;
+                border: 1px solid {text_color};
+            ">
+                {score}
+            </div>
+
         </div>
-        <div style="margin-top: 12px; font-weight: 600; color: #555; font-size: 14px; text-align: center;">{icon}<br>{label}</div>
+        
+        <!-- 底部标签 -->
+        <div style="margin-top: 15px; font-weight: 600; color: #555; font-size: 14px; text-align: center;">
+            {icon}<br>{label}
+        </div>
     </div>
     """
     st.markdown(html_code, unsafe_allow_html=True)
@@ -171,7 +212,6 @@ def render_vertical_gauge(label, score, icon):
 # ================= 5. 前端页面主逻辑 =================
 st.set_page_config(page_title="Mind Assets", page_icon="🦁", layout="centered")
 
-# CSS 优化
 st.markdown("""
 <style>
     .stTextArea textarea { font-size: 16px !important; border-radius: 10px; }
@@ -193,13 +233,11 @@ with st.sidebar:
 
 st.title("🦁 情绪资产")
 
-# 【文案修改点 1】
 tab1, tab2 = st.tabs(["📝 觉察录入", "📊 资产报表"])
 
 # --- Tab 1: 录入 ---
 with tab1:
     st.write("")
-    # 【文案修改点 2】
     user_input = st.text_area("记录当下的感受...", height=120, placeholder="在此输入你的觉察记录...")
     
     if st.button("⚡️ 提交审计", type="primary"):
@@ -222,18 +260,21 @@ with tab1:
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # 3. 核心视觉：纵向能量柱
+                    # 3. 核心视觉：分别调用三种主题色
                     st.markdown("### 📊 能量层级 (Energy Levels)")
                     col1, col2, col3 = st.columns(3)
                     
                     sc = result.get("scores", {})
                     
                     with col1:
-                        render_vertical_gauge("平静度", sc.get("平静度", 0), "🕊️")
+                        # 传入 theme='peace' (默认)
+                        render_vertical_gauge("平静度", sc.get("平静度", 0), "🕊️", theme="peace")
                     with col2:
-                        render_vertical_gauge("觉察度", sc.get("觉察度", 0), "👁️")
+                        # 传入 theme='awareness' (紫色)
+                        render_vertical_gauge("觉察度", sc.get("觉察度", 0), "👁️", theme="awareness")
                     with col3:
-                        render_vertical_gauge("能量值", sc.get("能量水平", 0), "🔋")
+                        # 传入 theme='energy' (橙色)
+                        render_vertical_gauge("能量值", sc.get("能量水平", 0), "🔋", theme="energy")
 
                     st.write("---")
                     
@@ -274,7 +315,8 @@ with tab2:
         df = pd.DataFrame(chart_data)
         df = df.sort_values('时间')
         
-        st.line_chart(df, x='时间', y=['平静度', '觉察度', '能量'], color=["#2ecc71", "#3498db", "#f1c40f"])
+        # 颜色更新：绿、紫、橙
+        st.line_chart(df, x='时间', y=['平静度', '觉察度', '能量'], color=["#2ecc71", "#9b59b6", "#e67e22"])
         
         st.markdown("---")
         
@@ -286,9 +328,11 @@ with tab2:
             with st.expander(f"{time_str} | {summary}"):
                 sc = item['ai_result'].get('scores', {})
                 st.markdown(f"""
-                <small>平静: <b style='color:{'#27ae60' if sc.get('平静度',0)>0 else '#e74c3c'}'>{sc.get('平静度')}</b> | 
-                觉察: <b>{sc.get('觉察度')}</b> | 
-                能量: <b>{sc.get('能量水平')}</b></small>
+                <small>
+                🕊️ <b style='color:#2ecc71'>{sc.get('平静度')}</b> | 
+                👁️ <b style='color:#9b59b6'>{sc.get('觉察度')}</b> | 
+                🔋 <b style='color:#e67e22'>{sc.get('能量水平')}</b>
+                </small>
                 """, unsafe_allow_html=True)
                 st.info(f"建议: {item['ai_result'].get('recommendations', {}).get('身心灵调适建议')}")
     else:
