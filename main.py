@@ -7,7 +7,7 @@ import traceback
 import re
 from supabase import create_client
 
-# ================= 1. 核心 Prompt (这是完整版，保证 AI 智商在线) =================
+# ================= 1. 核心 Prompt (完整保留，一字未改) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
 你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
@@ -77,7 +77,7 @@ STRICT_SYSTEM_PROMPT = """
 }
 """
 
-# ================= 2. 数据库连接层 (原样保留) =================
+# ================= 2. 数据库连接层 (保持原样) =================
 @st.cache_resource
 def init_supabase():
     try:
@@ -107,22 +107,16 @@ def get_history(user_id):
         except: return []
     return []
 
-# ================= 3. AI 分析逻辑 (含数据清洗) =================
+# ================= 3. AI 分析逻辑 (保持原样) =================
 def clean_json_string(s):
-    """清洗 JSON 字符串，修复 AI 可能产生的格式错误"""
     match = re.search(r'\{[\s\S]*\}', s)
-    if match:
-        s = match.group()
-    # 去除末尾逗号
+    if match: s = match.group()
     s = re.sub(r',\s*\}', '}', s)
     s = re.sub(r',\s*\]', ']', s)
     return s
 
 def analyze_emotion(text, api_key):
-    client = openai.OpenAI(
-        api_key=api_key, 
-        base_url="https://api.deepseek.com"
-    )
+    client = openai.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     content = ""
     try:
         response = client.chat.completions.create(
@@ -131,20 +125,15 @@ def analyze_emotion(text, api_key):
                 {"role": "system", "content": STRICT_SYSTEM_PROMPT},
                 {"role": "user", "content": f"【输入文本】\n{text}"}
             ],
-            temperature=0.4 # 稍微降低温度以保持格式稳定
+            temperature=0.4
         )
         content = response.choices[0].message.content
-        # 强力清洗
-        cleaned = clean_json_string(content)
-        return json.loads(cleaned)
+        return json.loads(clean_json_string(content))
     except Exception as e:
         return {"error": str(e), "raw_content": content}
 
-# ================= 4. 视觉组件 (纯 HTML 生成器，用于强制横排) =================
+# ================= 4. 视觉组件 (修复缩进问题和样式变形) =================
 def get_gauge_html(label, score, icon, theme="peace"):
-    """
-    生成单个能量柱的 HTML 字符串。
-    """
     percent = (score + 5) * 10
     
     colors = {
@@ -154,33 +143,32 @@ def get_gauge_html(label, score, icon, theme="peace"):
     }
     c = colors.get(theme, colors["peace"])
     
-    # 使用 flex: 1 让每个柱子平均分配空间
+    # 修复：去掉 flex:1，恢复 width: 40px，去掉缩进防止 markdown 渲染错误
     return f"""
-    <div style="flex: 1; display: flex; flex-direction: column; align-items: center;">
-        <div style="height: 140px; width: 30px; background: #f0f2f6; border-radius: 15px; position: relative; margin-top: 5px;">
-            <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 15px; transition: height 0.8s;"></div>
-            <div style="position: absolute; bottom: 50%; width: 100%; height: 1px; background: rgba(255,255,255,0.8);"></div>
-            <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); 
-                        background: #fff; color: {c[2]}; font-weight: bold; font-size: 11px; 
-                        padding: 1px 4px; border-radius: 6px; border: 1px solid {c[2]}; 
-                        box-shadow: 0 1px 3px rgba(0,0,0,0.15); z-index: 10; min-width: 20px; text-align: center;">
-                {score}
-            </div>
-        </div>
-        <div style="margin-top: 6px; font-size: 12px; font-weight: bold; color: #666; text-align: center; line-height: 1.2;">
-            {icon}<br>{label}
+<div style="display: flex; flex-direction: column; align-items: center; width: 60px;">
+    <div style="height: 160px; width: 36px; background: #f0f2f6; border-radius: 18px; position: relative; margin-top: 5px;">
+        <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 18px; transition: height 0.8s;"></div>
+        <div style="position: absolute; bottom: 50%; width: 100%; height: 1px; background: rgba(255,255,255,0.8);"></div>
+        <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); 
+                    background: #fff; color: {c[2]}; font-weight: bold; font-size: 12px; 
+                    padding: 1px 4px; border-radius: 6px; border: 1px solid {c[2]}; 
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.15); z-index: 10; min-width: 24px; text-align: center;">
+            {score}
         </div>
     </div>
-    """
+    <div style="margin-top: 8px; font-size: 12px; font-weight: bold; color: #666; text-align: center; line-height: 1.2;">
+        {icon}<br>{label}
+    </div>
+</div>
+"""
 
-# ================= 5. 主程序入口 =================
+# ================= 5. 主程序 =================
 st.set_page_config(page_title="AI情绪资产助手", page_icon="🦁", layout="centered")
 
 st.markdown("""
 <style>
     .stTextArea textarea { font-size: 16px !important; border-radius: 10px; }
     .stButton button { width: 100%; border-radius: 8px; height: 45px; font-weight: bold; }
-    /* 调整顶部和底部的留白，让手机端第一眼看到更多内容 */
     .block-container { padding-top: 2rem; padding-bottom: 3rem; }
 </style>
 """, unsafe_allow_html=True)
@@ -201,7 +189,7 @@ st.title("🦁 AI情绪资产助手")
 
 tab1, tab2 = st.tabs(["📝 觉察录入", "📊 情绪资产大盘"])
 
-# --- Tab 1: 录入 ---
+# --- Tab 1 ---
 with tab1:
     st.write("")
     user_input = st.text_area("记录当下身心感受...", height=100, placeholder="在此输入你的觉察记录...")
@@ -215,35 +203,29 @@ with tab1:
                 
                 if "error" in result:
                     st.error("系统故障，请重试")
-                    with st.expander("查看详细报错"):
-                        st.code(result.get('raw_content'))
+                    with st.expander("查看详细报错"): st.code(result.get('raw_content'))
                 else:
                     save_to_db(st.session_state.user_id, user_input, result)
                     st.toast("✅ 觉察已铸造")
                     
                     st.info(f"📝 {result.get('summary')}")
 
-                    # === [核心修改点] ===
-                    # 不使用 st.columns，而是使用纯 HTML Flex 布局
                     st.markdown("##### 📊 情绪资产水平")
                     
                     sc = result.get("scores", {})
-                    
-                    # 1. 获取 HTML 片段
                     h1 = get_gauge_html("平静度", sc.get("平静度", 0), "🕊️", "peace")
                     h2 = get_gauge_html("觉察度", sc.get("觉察度", 0), "👁️", "awareness")
                     h3 = get_gauge_html("能量值", sc.get("能量水平", 0), "🔋", "energy")
                     
-                    # 2. 拼接容器：display: flex 确保横向排列
+                    # 修复点：这里去掉了缩进，且使用了 justify-content: space-around 实现完美横排
                     container_html = f"""
-                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin: 20px 0;">
-                        {h1}
-                        {h2}
-                        {h3}
-                    </div>
-                    """
+<div style="display: flex; justify-content: space-around; align-items: flex-end; margin: 20px 0; width: 100%;">
+{h1}
+{h2}
+{h3}
+</div>
+"""
                     st.markdown(container_html, unsafe_allow_html=True)
-                    # ===================
 
                     st.write("---")
                     
@@ -258,7 +240,7 @@ with tab1:
                     </div>
                     """, unsafe_allow_html=True)
 
-# --- Tab 2: 报表 ---
+# --- Tab 2 ---
 with tab2:
     st.subheader("📈 情绪资产走势")
     if st.button("🔄 刷新大盘"):
@@ -272,47 +254,29 @@ with tab2:
             try:
                 res = item['ai_result']
                 if isinstance(res, str): res = json.loads(res)
-                
-                scores = res.get('scores', {})
-                utc_time = pd.to_datetime(item['created_at'])
-                bj_time = utc_time + pd.Timedelta(hours=8)
-                
+                sc = res.get('scores', {})
+                t = pd.to_datetime(item['created_at']) + pd.Timedelta(hours=8)
                 chart_data.append({
-                    "时间": bj_time, 
-                    "平静度": scores.get("平静度", 0),
-                    "觉察度": scores.get("觉察度", 0),
-                    "能量": scores.get("能量水平", 0)
+                    "时间": t, 
+                    "平静度": sc.get("平静度", 0),
+                    "觉察度": sc.get("觉察度", 0),
+                    "能量": sc.get("能量水平", 0)
                 })
             except: continue
         
         if chart_data:
             df = pd.DataFrame(chart_data).sort_values('时间')
             st.line_chart(df, x='时间', y=['平静度', '觉察度', '能量'], color=["#2ecc71", "#9b59b6", "#e67e22"])
-            
             st.markdown("---")
-            
             for item in data:
                 try:
-                    utc_time = pd.to_datetime(item['created_at'])
-                    time_str = (utc_time + pd.Timedelta(hours=8)).strftime('%m-%d %H:%M')
-                    
                     res = item['ai_result']
                     if isinstance(res, str): res = json.loads(res)
-                    
-                    summary = res.get('summary', '无摘要')
-                    
-                    with st.expander(f"{time_str} | {summary}"):
+                    t_str = (pd.to_datetime(item['created_at']) + pd.Timedelta(hours=8)).strftime('%m-%d %H:%M')
+                    with st.expander(f"{t_str} | {res.get('summary', '无摘要')}"):
                         sc = res.get('scores', {})
-                        st.markdown(f"""
-                        <small>
-                        🕊️ <b style='color:#2ecc71'>{sc.get('平静度')}</b> | 
-                        👁️ <b style='color:#9b59b6'>{sc.get('觉察度')}</b> | 
-                        🔋 <b style='color:#e67e22'>{sc.get('能量水平')}</b>
-                        </small>
-                        """, unsafe_allow_html=True)
+                        st.markdown(f"""<small>🕊️ <b style='color:#2ecc71'>{sc.get('平静度')}</b> | 👁️ <b style='color:#9b59b6'>{sc.get('觉察度')}</b> | 🔋 <b style='color:#e67e22'>{sc.get('能量水平')}</b></small>""", unsafe_allow_html=True)
                         st.info(f"建议: {res.get('recommendations', {}).get('身心灵调适建议')}")
                 except: continue
-        else:
-             st.info("暂无有效数据")
-    else:
-        st.info("暂无数据")
+        else: st.info("暂无有效数据")
+    else: st.info("暂无数据")
