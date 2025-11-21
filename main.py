@@ -82,7 +82,7 @@ def save_to_db(user_id, text, json_result):
             }).execute()
         except: pass
 
-def get_history(user_id, limit=200): # 保持200条，确保能覆盖今天
+def get_history(user_id, limit=200):
     sb = init_supabase()
     if sb:
         try:
@@ -129,10 +129,18 @@ def get_gauge_html(label, score, icon, theme="peace"):
     
     return f"<div style='display: flex; flex-direction: column; align-items: center; width: 80px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; top: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>+5</div><div style='position: absolute; top: 50%; transform: translateY(-50%); left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>0</div><div style='position: absolute; bottom: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>-5</div><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s; z-index: 1;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
-# ================= 5. 图表函数 (字符串强制渲染版) =================
+# ================= 5. 图表函数 (Object-Based Time Series) =================
 
-def parse_to_beijing(t_str):
-    """清洗时间并返回 datetime 对象"""
+def get_beijing_time_range():
+    """获取北京时间当天的起止时间对象 (无时区)"""
+    now_utc = datetime.datetime.utcnow()
+    now_bj = now_utc + datetime.timedelta(hours=8)
+    start = now_bj.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = now_bj.replace(hour=23, minute=59, second=59, microsecond=0)
+    return start, end, now_bj.strftime('%Y-%m-%d')
+
+def parse_to_beijing_obj(t_str):
+    """将任意时间字符串转为北京时间 datetime 对象 (无时区)"""
     try:
         dt = pd.to_datetime(t_str)
         if dt.tzinfo is not None:
@@ -146,50 +154,35 @@ def parse_to_beijing(t_str):
 def render_smooth_trend(data_list):
     """Tab 1: 今日平滑曲线"""
     try:
-        now_bj = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
-        today_str = now_bj.strftime('%Y-%m-%d')
-        
-        # 构造全天的起止时间字符串 (String Format)
-        start_str = f"{today_str} 00:00:00"
-        end_str = f"{today_str} 23:59:59"
+        start_of_day, end_of_day, today_str = get_beijing_time_range()
 
         df_list = []
         if data_list:
             for item in data_list:
                 try:
-                    dt = parse_to_beijing(item['created_at'])
-                    if dt.strftime('%Y-%m-%d') == today_str:
+                    dt = parse_to_beijing_obj(item['created_at'])
+                    # 严格匹配日期
+                    if dt.date() == start_of_day.date():
                         res = item['ai_result']
                         if isinstance(res, str): res = json.loads(res)
                         df_list.append({
-                            # 【修复】转成字符串，避免对象兼容问题
-                            "Time": dt.strftime('%Y-%m-%d %H:%M:%S'),
+                            "Time": dt, # 这里传入的是 datetime 对象
                             "平静度": res['scores'].get('平静度', 0)
                         })
                 except: continue
         
-        if not df_list:
-             df = pd.DataFrame([
-                 {"Time": start_str, "平静度": 0},
-                 {"Time": end_str, "平静度": 0}
-             ])
-             df['opacity'] = 0 
+        if not df_list: 
+             df = pd.DataFrame({'Time': [start_of_day, end_of_day], '平静度': [0, 0]})
         else:
              df = pd.DataFrame(df_list)
-             df['opacity'] = 1
 
         st.caption(f"🌊 今日心流 ({today_str})")
         
-        chart = alt.Chart(df).mark_line(
-            interpolate='monotone', 
-            strokeWidth=3
-        ).encode(
-            # 【修复】声明数据类型为 Time (:T)
-            x=alt.X('Time:T', scale=alt.Scale(domain=[start_str, end_str]), axis=alt.Axis(format='%H:%M', title='')),
+        chart = alt.Chart(df).mark_line(interpolate='monotone', strokeWidth=3).encode(
+            x=alt.X('Time', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
             y=alt.Y('平静度', scale=alt.Scale(domain=[-5, 5]), title=''),
             color=alt.value('#11998e'),
-            opacity=alt.value(1) if df_list else alt.value(0),
-            tooltip=['Time:T', '平静度']
+            tooltip=['Time', '平静度']
         ).properties(height=120)
         
         st.altair_chart(chart, use_container_width=True)
@@ -198,25 +191,18 @@ def render_smooth_trend(data_list):
         st.warning(f"图表加载中... ({str(e)})")
 
 def render_focus_map(data_list):
-    """Tab 2: 注意力地图 (字符串强制渲染版)"""
+    """Tab 2: 注意力地图 (回归 Datetime 对象渲染)"""
     try:
-        now_bj = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
-        today_str = now_bj.strftime('%Y-%m-%d')
-        
-        # 构造全天的起止时间字符串
-        start_str = f"{today_str} 00:00:00"
-        end_str = f"{today_str} 23:59:59"
+        start_of_day, end_of_day, today_str = get_beijing_time_range()
         
         processed_data = []
-        debug_count = 0
-        
         if data_list:
             for item in data_list:
                 try:
-                    dt = parse_to_beijing(item['created_at'])
+                    dt = parse_to_beijing_obj(item['created_at'])
                     
-                    if dt.strftime('%Y-%m-%d') == today_str:
-                        debug_count += 1
+                    # 严格匹配日期
+                    if dt.date() == start_of_day.date():
                         res = item['ai_result']
                         if isinstance(res, str): res = json.loads(res)
                         focus = res.get('focus_analysis', {})
@@ -228,8 +214,7 @@ def render_focus_map(data_list):
                         color_hex = "#FF9800" if "external" in t_check else "#9C27B0"
                         
                         processed_data.append({
-                            # 【修复】转成字符串
-                            "Time": dt.strftime('%Y-%m-%d %H:%M:%S'),
+                            "Time": dt, # 这里传入的是 datetime 对象
                             "Y_Val": y_map.get(time_orient, 2),
                             "Target": target_orient,
                             "Color": color_hex,
@@ -237,55 +222,52 @@ def render_focus_map(data_list):
                         })
                 except: continue
         
-        # 调试信息 (既然图表没出来，这个先保留帮我们确认数据)
-        st.session_state['debug_info'] = {
-            "today": today_str,
-            "valid_points": len(processed_data),
-            "sample_time": processed_data[0]['Time'] if processed_data else "None"
-        }
-
+        # 构造 DataFrame
         if not processed_data:
-            df = pd.DataFrame({'Time': [start_str], 'Y_Val': [2], 'Color': ['#fff']})
-            draw_points = False
+            df = pd.DataFrame({'Time': [start_of_day], 'Y_Val': [2], 'Color': ['#fff']})
+            # 如果没数据，opacity 设为 0 隐藏点
+            point_opacity = 0
         else:
             df = pd.DataFrame(processed_data)
-            draw_points = True
+            point_opacity = 0.9
 
-        # 背景层：完全使用字符串定义范围
+        # 背景层数据：也必须是 datetime 对象
         bg_data = pd.DataFrame([
-            {"y_start": 2.5, "y_end": 3.5, "y_mid": 3, "color": "#F2F4F6", "label": "过去 Past", "x_s": start_str, "x_e": end_str},
-            {"y_start": 1.5, "y_end": 2.5, "y_mid": 2, "color": "#F3E5F5", "label": "当下 Present", "x_s": start_str, "x_e": end_str},
-            {"y_start": 0.5, "y_end": 1.5, "y_mid": 1, "color": "#E1F5FE", "label": "未来 Future", "x_s": start_str, "x_e": end_str},
+            {"y_start": 2.5, "y_end": 3.5, "y_mid": 3, "color": "#F2F4F6", "label": "过去 Past"},
+            {"y_start": 1.5, "y_end": 2.5, "y_mid": 2, "color": "#F3E5F5", "label": "当下 Present"},
+            {"y_start": 0.5, "y_end": 1.5, "y_mid": 1, "color": "#E1F5FE", "label": "未来 Future"},
         ])
+        # 给每一行加上起止时间对象
+        bg_data['x_start'] = start_of_day
+        bg_data['x_end'] = end_of_day
         
+        # 1. 背景色带
         background = alt.Chart(bg_data).mark_rect(opacity=0.8).encode(
-            x=alt.X('x_s:T', scale=alt.Scale(domain=[start_str, end_str]), axis=None),
-            x2='x_e:T',
+            x=alt.X('x_start', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=None),
+            x2='x_end',
             y=alt.Y('y_start', scale=alt.Scale(domain=[0.5, 3.5]), axis=None),
             y2='y_end', 
             color=alt.Color('color', scale=None)
         )
         
+        # 2. 背景文字
         text_layer = alt.Chart(bg_data).mark_text(
             align='left', baseline='middle', dx=10, color='#B0BEC5', fontSize=14, fontWeight='bold'
         ).encode(
-            x=alt.X('x_s:T'),
+            x=alt.X('x_start'),
             y=alt.Y('y_mid'),
             text='label'
         )
         
-        final_chart = background + text_layer
-        
-        if draw_points:
-            points = alt.Chart(df).mark_circle(size=150, opacity=0.9).encode(
-                x=alt.X('Time:T', scale=alt.Scale(domain=[start_str, end_str]), axis=alt.Axis(format='%H:%M', title='')),
-                y=alt.Y('Y_Val', title='', axis=None),
-                color=alt.Color('Color', scale=None),
-                tooltip=['Time:T', 'Summary', 'Target']
-            )
-            final_chart = final_chart + points
+        # 3. 数据散点
+        points = alt.Chart(df).mark_circle(size=150, opacity=point_opacity).encode(
+            x=alt.X('Time', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
+            y=alt.Y('Y_Val', title='', axis=None),
+            color=alt.Color('Color', scale=None),
+            tooltip=['Time', 'Summary', 'Target']
+        )
 
-        st.altair_chart(final_chart.properties(height=300).interactive(), use_container_width=True)
+        st.altair_chart((background + text_layer + points).properties(height=300).interactive(), use_container_width=True)
         st.caption("说明：🟣 紫点=关注内在 | 🟠 橙点=关注外在")
         
     except Exception as e:
@@ -398,9 +380,5 @@ with tab2:
             </span></p>
         </div>
         """, unsafe_allow_html=True)
-        
-        # 保留调试信息，万一还有问题可以看到
-        if 'debug_info' in st.session_state:
-            st.caption(f"Debug: {st.session_state['debug_info']}")
     else:
         st.info("暂无数据，请先去首页记录。")
