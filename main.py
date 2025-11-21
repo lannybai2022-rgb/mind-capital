@@ -5,7 +5,7 @@ import datetime
 import pandas as pd
 import traceback
 import re
-import altair as alt  # 绘图库
+import altair as alt
 from supabase import create_client
 
 # ================= 1. 核心 Prompt (保持不变) =================
@@ -117,7 +117,7 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e), "raw_content": content}
 
-# ================= 4. 视觉组件 (Gauge) =================
+# ================= 4. 视觉组件 (刻度在右侧版) =================
 def get_gauge_html(label, score, icon, theme="peace"):
     percent = (score + 5) * 10
     colors = {
@@ -129,26 +129,29 @@ def get_gauge_html(label, score, icon, theme="peace"):
     
     return f"<div style='display: flex; flex-direction: column; align-items: center; width: 80px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; top: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>+5</div><div style='position: absolute; top: 50%; transform: translateY(-50%); left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>0</div><div style='position: absolute; bottom: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>-5</div><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s; z-index: 1;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
-# ================= 5. 修复版图表函数 (锁定 24h 坐标系) =================
+# ================= 5. 修复版图表函数 (时区 & 颜色判定修复) =================
+
+# 获取当前北京时间
+def get_beijing_now():
+    return datetime.datetime.utcnow() + datetime.timedelta(hours=8)
 
 def render_smooth_trend(data_list):
-    """Tab 1: 今日平滑曲线 (修复：强制展示全天 00:00-24:00)"""
+    """Tab 1: 今日平滑曲线"""
     
-    # 1. 准备全天的时间范围 (Domain)
-    now = datetime.datetime.now()
-    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
-    today_str = now.strftime('%Y-%m-%d')
+    # 1. 准备全天的时间范围 (UTC+8)
+    now_bj = get_beijing_now()
+    start_of_day = now_bj.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_day = now_bj.replace(hour=23, minute=59, second=59, microsecond=0)
+    today_str = now_bj.strftime('%Y-%m-%d')
 
-    # 2. 数据处理
     if not data_list: 
-        # 如果没数据，也画一个空坐标系
         df = pd.DataFrame({'Time': [start_of_day, end_of_day], '平静度': [0, 0]})
     else:
         df_list = []
         for item in data_list:
             try:
                 created_at = pd.to_datetime(item['created_at']) + pd.Timedelta(hours=8)
+                # 严格匹配日期
                 if created_at.strftime('%Y-%m-%d') == today_str:
                     res = item['ai_result']
                     if isinstance(res, str): res = json.loads(res)
@@ -158,37 +161,37 @@ def render_smooth_trend(data_list):
                     })
             except: continue
         
-        if not df_list: return
-        df = pd.DataFrame(df_list)
+        if not df_list: 
+             # 如果今天没数据，也初始化一个空框架
+             df = pd.DataFrame({'Time': [start_of_day, end_of_day], '平静度': [0, 0]})
+        else:
+             df = pd.DataFrame(df_list)
 
-    # 3. 绘图 (Lock Axis)
-    # 标题在外部渲染，防止遮挡
     st.caption(f"🌊 今日心流 ({today_str})")
     
     chart = alt.Chart(df).mark_line(
-        interpolate='monotone', # 平滑算法
+        interpolate='monotone',
         strokeWidth=3
     ).encode(
-        # 强制 X 轴范围为 0点到24点
+        # 强制使用北京时间的一整天作为 X 轴范围
         x=alt.X('Time', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
         y=alt.Y('平静度', scale=alt.Scale(domain=[-5, 5]), title=''),
         color=alt.value('#11998e'),
         tooltip=['Time', '平静度']
     ).properties(
         height=120,
-        width='container' # 自适应宽度
+        # width='container' 
     )
     
     st.altair_chart(chart, use_container_width=True)
 
 
 def render_focus_map(data_list):
-    """Tab 2: 注意力地图 (修复：强制展示全天 00:00-24:00)"""
+    """Tab 2: 注意力地图 (修复颜色判断和坐标显示)"""
     
-    # 1. 准备全天范围
-    now = datetime.datetime.now()
-    start_of_day = now.replace(hour=0, minute=0, second=0)
-    end_of_day = now.replace(hour=23, minute=59, second=59)
+    now_bj = get_beijing_now()
+    start_of_day = now_bj.replace(hour=0, minute=0, second=0)
+    end_of_day = now_bj.replace(hour=23, minute=59, second=59)
     
     processed_data = []
     if data_list:
@@ -198,57 +201,55 @@ def render_focus_map(data_list):
                 if isinstance(res, str): res = json.loads(res)
                 focus = res.get('focus_analysis', {})
                 time_orient = focus.get('time_orientation', 'Present')
-                target_orient = focus.get('focus_target', 'Internal') # 以前的数据没有这个字段，默认Internal
+                target_orient = focus.get('focus_target', 'Internal')
                 
                 y_map = {"Past": 3, "Present": 2, "Future": 1}
                 
-                # 颜色逻辑：如果有数据则正常显示，如果是旧数据(没有focus_target)暂时给紫色
-                color_hex = "#FF9800" if target_orient == "External" else "#9C27B0"
+                # 【修复点1】颜色判断逻辑放宽，转为小写去空格后再判断
+                t_check = str(target_orient).strip().lower()
+                color_hex = "#FF9800" if "external" in t_check else "#9C27B0"
                 
                 processed_data.append({
                     "Time": pd.to_datetime(item['created_at']) + pd.Timedelta(hours=8),
-                    "Y_Val": y_map.get(time_orient, 2),
+                    "Y_Val": y_map.get(time_orient, 2), # 默认为 Present
                     "Target": target_orient,
                     "Color": color_hex,
                     "Summary": res.get('summary', '')
                 })
             except: continue
             
-    # 构造 DataFrame，如果没有数据，造一个空的防止报错
     if not processed_data:
+        # 空数据占位
         df = pd.DataFrame({'Time': [start_of_day], 'Y_Val': [2], 'Color': ['#fff']})
     else:
         df = pd.DataFrame(processed_data)
 
-    # 2. 背景层 (必须强制覆盖全天)
+    # 背景层
     bg_data = pd.DataFrame([
         {"start": 2.5, "end": 3.5, "color": "#F2F4F6", "label": "过去"},
         {"start": 1.5, "end": 2.5, "color": "#F3E5F5", "label": "当下"},
         {"start": 0.5, "end": 1.5, "color": "#E1F5FE", "label": "未来"},
     ])
     
-    # 绘制背景
     background = alt.Chart(bg_data).mark_rect(opacity=0.8).encode(
-        x=alt.value(0), # 充满整个图表宽度
-        x2=alt.value(800), # 预设一个足够大的宽度，或者配合 autosize
+        x=alt.value(0),
+        x2=alt.value(800), # 铺满宽度
         y=alt.Y('start', scale=alt.Scale(domain=[0.5, 3.5]), axis=None),
         y2='end', 
         color=alt.Color('color', scale=None)
     )
     
-    # 3. 散点图 (锁定 X 轴)
-    points = alt.Chart(df).mark_circle(size=150, opacity=0.8).encode(
+    # 散点层
+    points = alt.Chart(df).mark_circle(size=150, opacity=0.9).encode(
+        # 【修复点2】强制锁定北京时间 0-24 点，防止数据点因时区问题跑出画布
         x=alt.X('Time', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
         y=alt.Y('Y_Val', title='', axis=alt.Axis(tickCount=3, values=[1, 2, 3], labelExpr="datum.value == 3 ? '过去' : datum.value == 2 ? '当下' : '未来'")),
         color=alt.Color('Color', scale=None),
         tooltip=['Time', 'Summary', 'Target']
     )
 
-    # 组合图表
     st.altair_chart((background + points).properties(height=300).interactive(), use_container_width=True)
-    
-    # 图例说明
-    st.caption("说明：🟣 紫点=关注内在 | 🟠 橙点=关注外在 (注：旧数据可能默认为紫色)")
+    st.caption("说明：🟣 紫点=关注内在 | 🟠 橙点=关注外在")
 
 # ================= 6. 主程序 =================
 st.set_page_config(page_title="AI情绪资产助手", page_icon="🦁", layout="centered")
@@ -336,12 +337,10 @@ with tab2:
     render_focus_map(history_data)
     
     if history_data:
-        # 获取最新记录的 NVC 旁白
         latest_nvc = history_data[0]['ai_result']
         if isinstance(latest_nvc, str): latest_nvc = json.loads(latest_nvc)
         nvc = latest_nvc.get("nvc_guide", {})
         
-        # 明确告知用户来源
         st.markdown("### 🦒 AI 陪伴旁白")
         st.info("此处展示基于你 **最近一次觉察** 的深度解读：")
         
