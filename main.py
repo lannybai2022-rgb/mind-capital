@@ -129,7 +129,7 @@ def get_gauge_html(label, score, icon, theme="peace"):
     
     return f"<div style='display: flex; flex-direction: column; align-items: center; width: 80px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; top: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>+5</div><div style='position: absolute; top: 50%; transform: translateY(-50%); left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>0</div><div style='position: absolute; bottom: 4px; left: 50px; color: #bdc3c7; font-size: 10px; font-weight: bold;'>-5</div><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s; z-index: 1;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
-# ================= 5. 图表函数 (已修复所有语法错误) =================
+# ================= 5. 图表函数 (修复版) =================
 
 def parse_to_beijing(t_str):
     try:
@@ -188,7 +188,7 @@ def render_smooth_trend(data_list):
         st.warning(f"图表加载中... ({str(e)})")
 
 def render_focus_map(data_list):
-    """Tab 2: 注意力地图 (已修复 SyntaxError)"""
+    """Tab 2: 注意力地图 (已修复坐标轴冲突导致的白屏问题)"""
     try:
         now_utc = datetime.datetime.utcnow()
         now_bj = now_utc + datetime.timedelta(hours=8)
@@ -213,7 +213,6 @@ def render_focus_map(data_list):
                         t_check = str(target_orient).strip().lower()
                         color_hex = "#FF9800" if "external" in t_check else "#9C27B0"
                         
-                        # 【这里是修复点：确保字典和括号完全闭合】
                         processed_data.append({
                             "Time": created_at,
                             "Y_Val": y_map.get(time_orient, 2),
@@ -228,26 +227,35 @@ def render_focus_map(data_list):
         else:
             df = pd.DataFrame(processed_data)
 
+        # 【核心修复】：给背景数据也加上时间轴，确保所有图层共用同一个 X 轴
         bg_data = pd.DataFrame([
             {"start": 2.5, "end": 3.5, "y_mid": 3, "color": "#F2F4F6", "label": "过去 Past"},
             {"start": 1.5, "end": 2.5, "y_mid": 2, "color": "#F3E5F5", "label": "当下 Present"},
             {"start": 0.5, "end": 1.5, "y_mid": 1, "color": "#E1F5FE", "label": "未来 Future"},
         ])
+        # 强制填充时间字段
+        bg_data['x_start'] = start_of_day
+        bg_data['x_end'] = end_of_day
         
+        # 背景层：改用时间轴 x_start 和 x_end
         background = alt.Chart(bg_data).mark_rect(opacity=0.8).encode(
-            x=alt.value(0), x2=alt.value(800),
+            x=alt.X('x_start:T', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=None),
+            x2='x_end:T',
             y=alt.Y('start', scale=alt.Scale(domain=[0.5, 3.5]), axis=None),
-            y2='end', color=alt.Color('color', scale=None)
+            y2='end', 
+            color=alt.Color('color', scale=None)
         )
         
+        # 文字层：定位到当天的开始时间
         text_layer = alt.Chart(bg_data).mark_text(
             align='left', baseline='middle', dx=10, color='#B0BEC5', fontSize=14, fontWeight='bold'
         ).encode(
-            x=alt.value(0),
-            y=alt.Y('y_mid', scale=alt.Scale(domain=[0.5, 3.5])),
+            x=alt.X('x_start:T'),
+            y=alt.Y('y_mid'),
             text='label'
         )
         
+        # 数据点层
         points = alt.Chart(df).mark_circle(size=150, opacity=0.9).encode(
             x=alt.X('Time:T', scale=alt.Scale(domain=[start_of_day, end_of_day]), axis=alt.Axis(format='%H:%M', title='')),
             y=alt.Y('Y_Val', title='', axis=None),
@@ -340,6 +348,7 @@ with tab1:
             </div>
             """, unsafe_allow_html=True)
             
+        # 【已修复变量名】
         st.markdown(f"""
         <div style="background-color:#eafaf1; padding:15px; border-radius:8px; border: 1px dashed #27ae60; margin-top: 15px;">
             <strong style="color:#27ae60;">💊 行动指南：</strong><br>
