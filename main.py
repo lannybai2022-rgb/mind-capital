@@ -107,13 +107,13 @@ def get_history(user_id):
         except: return []
     return []
 
-# ================= 3. AI 分析逻辑 (保留了 +1 修复逻辑) =================
+# ================= 3. AI 分析逻辑 (一字未改) =================
 def clean_json_string(s):
     match = re.search(r'\{[\s\S]*\}', s)
     if match: s = match.group()
     s = re.sub(r',\s*\}', '}', s)
     s = re.sub(r',\s*\]', ']', s)
-    s = re.sub(r':\s*\+', ': ', s) # 保留去加号逻辑
+    s = re.sub(r':\s*\+', ': ', s)
     return s
 
 def analyze_emotion(text, api_key):
@@ -133,7 +133,7 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e), "raw_content": content}
 
-# ================= 4. 视觉组件 (修复：加回了 -5, 0, +5 刻度) =================
+# ================= 4. 视觉组件 (修复：把刻度的 z-index 从 0 提高到 2) =================
 def get_gauge_html(label, score, icon, theme="peace"):
     percent = (score + 5) * 10
     
@@ -144,9 +144,10 @@ def get_gauge_html(label, score, icon, theme="peace"):
     }
     c = colors.get(theme, colors["peace"])
     
-    # 【修改点】在 liquid div 之前，加回了三个 position:absolute 的文字 div
-    # 这样当液体为空时能看到数字，液体满了会盖住数字，保持整洁
-    return f"<div style='display: flex; flex-direction: column; align-items: center; width: 60px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; top: 10px; width: 100%; text-align: center; color: #bdc3c7; font-size: 10px; font-weight: bold; z-index: 0;'>+5</div><div style='position: absolute; top: 50%; transform: translateY(-50%); width: 100%; text-align: center; color: #bdc3c7; font-size: 10px; font-weight: bold; z-index: 0;'>0</div><div style='position: absolute; bottom: 10px; width: 100%; text-align: center; color: #bdc3c7; font-size: 10px; font-weight: bold; z-index: 0;'>-5</div><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s; z-index: 1;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
+    # 【修改说明】
+    # 这里的 +5, 0, -5 的 div 中的 z-index 全部从 0 改成了 2
+    # 液体的 z-index 是 1，所以现在文字会永远浮在液体上面
+    return f"<div style='display: flex; flex-direction: column; align-items: center; width: 60px;'><div style='height: 160px; width: 44px; background: #f0f2f6; border-radius: 22px; position: relative; margin-top: 5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);'><div style='position: absolute; top: 10px; width: 100%; text-align: center; color: #bdc3c7; font-size: 10px; font-weight: bold; z-index: 2;'>+5</div><div style='position: absolute; top: 50%; transform: translateY(-50%); width: 100%; text-align: center; color: #bdc3c7; font-size: 10px; font-weight: bold; z-index: 2;'>0</div><div style='position: absolute; bottom: 10px; width: 100%; text-align: center; color: #bdc3c7; font-size: 10px; font-weight: bold; z-index: 2;'>-5</div><div style='position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); border-radius: 22px; transition: height 0.8s; z-index: 1;'></div><div style='position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: #fff; color: {c[2]}; font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid {c[2]}; box-shadow: 0 3px 8px rgba(0,0,0,0.15); z-index: 10; min-width: 28px; text-align: center; line-height: 1.2;'>{score}</div></div><div style='margin-top: 10px; font-size: 13px; font-weight: 600; color: #666; text-align: center;'>{icon}<br>{label}</div></div>"
 
 # ================= 5. 主程序 =================
 st.set_page_config(page_title="AI情绪资产助手", page_icon="🦁", layout="centered")
