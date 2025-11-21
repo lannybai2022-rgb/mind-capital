@@ -5,10 +5,10 @@ import datetime
 import pandas as pd
 from supabase import create_client
 
-# ================= 1. 核心 Prompt (完整保留) =================
+# ================= 1. 核心 Prompt (完整保留严谨标准) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
-你是一位结合了身心灵、修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
+你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
 
 【情绪标签体系与评分标准】
 请严格基于以下3个维度进行量化分析（分数范围：-5到+5）。你必须参考下表中的描述来判断分数：
@@ -110,7 +110,7 @@ def get_history(user_id):
             return []
     return []
 
-# ================= 3. AI 分析逻辑 =================
+# ================= 3. AI 分析逻辑 (已修复手机端 JSON 解析 Bug) =================
 def analyze_emotion(text, api_key):
     client = openai.OpenAI(
         api_key=api_key, 
@@ -124,17 +124,30 @@ def analyze_emotion(text, api_key):
                 {"role": "user", "content": f"【输入文本】\n{text}"}
             ],
             temperature=0.5,
-            response_format={"type": "json_object"}
+            # 注意：这里不强制 response_format，而是靠后处理清洗，兼容性更好
         )
-        return json.loads(response.choices[0].message.content)
+        
+        # === 核心修复：数据清洗 ===
+        content = response.choices[0].message.content
+        
+        # 1. 去除可能存在的 Markdown 代码块标记
+        if "```" in content:
+            content = content.replace("```json", "").replace("```", "")
+        
+        # 2. 去除首尾空白字符
+        content = content.strip()
+        
+        # 3. 解析 JSON
+        return json.loads(content)
+        
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"AI数据解析失败: {str(e)}"}
 
-# ================= 4. 视觉组件 (Clean HTML Version) =================
+# ================= 4. 视觉组件 (纯净无报错版) =================
 
 def render_vertical_gauge(label, score, icon, theme="peace"):
     """
-    渲染纵向能量柱 (无注释纯净版，修复渲染报错)
+    渲染纵向能量柱 (包含刻度、气泡、动态颜色)
     """
     percent = (score + 5) * 10
     
@@ -151,7 +164,7 @@ def render_vertical_gauge(label, score, icon, theme="peace"):
         bg_gradient = "#ccc"
         text_color = "#333"
 
-    # 移除所有注释和不必要的换行，确保 HTML 结构紧凑
+    # 压缩后的 HTML，确保 Streamlit 渲染稳定
     html_code = f"""
     <div style="display: flex; flex-direction: column; align-items: center; height: 220px; position: relative;">
         <div style="height: 180px; width: 40px; background-color: #f0f2f6; border-radius: 20px; position: relative; overflow: visible; margin-top: 10px;">
@@ -169,9 +182,10 @@ def render_vertical_gauge(label, score, icon, theme="peace"):
     """
     st.markdown(html_code, unsafe_allow_html=True)
 
-# ================= 5. 前端页面主逻辑 =================
-st.set_page_config(page_title="Mind Assets", page_icon="🦁", layout="centered")
+# ================= 5. 主程序入口 =================
+st.set_page_config(page_title="AI情绪资产助手", page_icon="🦁", layout="centered")
 
+# CSS 适配优化
 st.markdown("""
 <style>
     .stTextArea textarea { font-size: 16px !important; border-radius: 10px; }
@@ -220,8 +234,8 @@ with tab1:
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # 3. 核心视觉
-                    st.markdown("### 📊 情绪资产水平 ")
+                    # 3. 核心视觉：纵向能量柱
+                    st.markdown("### 📊 情绪资产水平")
                     col1, col2, col3 = st.columns(3)
                     
                     sc = result.get("scores", {})
