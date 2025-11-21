@@ -8,7 +8,7 @@ from supabase import create_client
 # ================= 1. 核心 Prompt (完全还原你的严格标准) =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
-你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
+你是一位结合了身心灵修行理论、实修和数据分析的“情绪资产管理专家”。
 
 【情绪标签体系与评分标准】
 请严格基于以下3个维度进行量化分析（分数范围：-5到+5）。你必须参考下表中的描述来判断分数：
@@ -53,25 +53,16 @@ STRICT_SYSTEM_PROMPT = """
 +5: 精力过剩
 
 【任务要求】
-1. 分析与评分： 仔细阅读输入文本，根据【情绪标签体系与评分标准】对用户的情绪状态进行量化评分（-5到+5）。
-2. 洞察与建议： 提取核心情绪模式，并提供一条身心灵调适建议。
-3. 输出格式： 必须严格以JSON格式输出，不包含任何额外解释性文字。
+1. 评分：仔细阅读输入文本，根据上述标准量化评分。
+2. 洞察：提取核心情绪模式，提供身心灵建议。
+3. 格式：必须严格以JSON格式输出。
 
 【JSON输出格式】
 {
-  "summary": "对用户情绪日记的简短总结，不超过30字。",
-  "scores": {
-    "平静度": 整数,
-    "觉察度": 整数,
-    "能量水平": 整数
-  },
-  "key_insights": [
-    "洞察点1",
-    "洞察点2"
-  ],
-  "recommendations": {
-    "身心灵调适建议": "不超过50字。"
-  }
+  "summary": "30字内总结（一针见血）",
+  "scores": { "平静度": 整数, "觉察度": 整数, "能量水平": 整数 },
+  "key_insights": ["洞察1", "洞察2"],
+  "recommendations": { "身心灵调适建议": "50字建议" }
 }
 """
 
@@ -89,7 +80,6 @@ def save_to_db(user_id, text, json_result):
     sb = init_supabase()
     if sb:
         try:
-            # 执行插入，不再显示调试信息，保持界面清爽
             sb.table("emotion_logs").insert({
                 "user_id": user_id,
                 "user_input": text,
@@ -105,14 +95,13 @@ def get_history(user_id):
     sb = init_supabase()
     if sb:
         try:
-            # 获取最近 50 条数据
             res = sb.table("emotion_logs").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(50).execute()
             return res.data
         except:
             return []
     return []
 
-# ================= 3. AI 分析逻辑 (DeepSeek) =================
+# ================= 3. AI 分析逻辑 =================
 def analyze_emotion(text, api_key):
     client = openai.OpenAI(
         api_key=api_key, 
@@ -125,72 +114,132 @@ def analyze_emotion(text, api_key):
                 {"role": "system", "content": STRICT_SYSTEM_PROMPT},
                 {"role": "user", "content": f"【输入文本】\n{text}"}
             ],
-            temperature=0.5, # 保持严谨
+            temperature=0.5,
             response_format={"type": "json_object"}
         )
         return json.loads(response.choices[0].message.content)
     except Exception as e:
         return {"error": str(e)}
 
-# ================= 4. 前端页面 UI =================
-st.set_page_config(page_title="MindCapital", page_icon="🧘", layout="centered")
+# ================= 4. 高级 UI 组件 (双向进度条) =================
+
+def render_tech_bar(label, score, icon):
+    """
+    渲染双向能量条：左红右绿，中间为0
+    """
+    width_percent = abs(score) * 10 
+    
+    if score > 0:
+        bar_color = "linear-gradient(90deg, #00b09b 0%, #96c93d 100%)" # 绿
+        position_left = "50%"
+        border_radius = "0 4px 4px 0"
+        value_color = "#27ae60"
+        prefix = "+"
+    elif score < 0:
+        bar_color = "linear-gradient(90deg, #ff5f6d 0%, #ffc371 100%)" # 红
+        position_left = f"{50 - width_percent}%"
+        border_radius = "4px 0 0 4px"
+        value_color = "#e74c3c"
+        prefix = ""
+    else:
+        bar_color = "#ddd"
+        position_left = "50%"
+        width_percent = 0
+        border_radius = "0"
+        value_color = "#95a5a6"
+        prefix = ""
+
+    html_code = f"""
+    <div style="margin-bottom: 12px; font-family: 'Source Sans Pro', sans-serif;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span style="font-weight: 600; font-size: 14px; color: #4a4a4a;">{icon} {label}</span>
+            <span style="font-weight: 700; font-size: 16px; color: {value_color};">{prefix}{score}</span>
+        </div>
+        <div style="width: 100%; background-color: #f0f2f6; height: 10px; border-radius: 5px; position: relative; overflow: hidden;">
+            <div style="position: absolute; left: 50%; width: 2px; height: 100%; background-color: #d1d5db; z-index: 1; opacity: 0.5;"></div>
+            <div style="position: absolute; height: 100%; left: {position_left}; width: {width_percent}%; background: {bar_color}; border-radius: {border_radius}; transition: all 0.6s ease;"></div>
+        </div>
+    </div>
+    """
+    st.markdown(html_code, unsafe_allow_html=True)
+
+# ================= 5. 前端页面主逻辑 =================
+st.set_page_config(page_title="Mind Assets", page_icon="🦁", layout="centered")
+
+# CSS 注入
+st.markdown("""
+<style>
+    .stTextArea textarea { font-size: 16px !important; border-radius: 10px; }
+    .stButton button { width: 100%; border-radius: 8px; height: 45px; font-weight: bold; }
+</style>
+""", unsafe_allow_html=True)
 
 if "user_id" not in st.session_state:
     st.session_state.user_id = "guest_001"
 
 with st.sidebar:
-    st.header("⚙️ 设置")
+    st.header("⚙️ 系统设置")
     if "OPENAI_API_KEY" in st.secrets:
         api_key = st.secrets["OPENAI_API_KEY"]
-        st.success("✅ 服务已连接")
+        st.success("✅ 神经网络已连接")
     else:
-        api_key = st.text_input("DeepSeek Key", type="password")
-    
-    st.session_state.user_id = st.text_input("当前用户ID", value=st.session_state.user_id)
+        api_key = st.text_input("输入 DeepSeek Key", type="password")
+    st.session_state.user_id = st.text_input("账户 ID", value=st.session_state.user_id)
 
-st.title("🧘 情绪资产管理")
+st.title("🦁 情绪资产")
+st.caption("将每一次心跳，量化为可增值的心灵财富")
 
-tab1, tab2 = st.tabs(["📝 觉察录入", "📊 资产报表"])
+tab1, tab2 = st.tabs(["⚡️ 资产铸造 (录入)", "📊 趋势大盘 (报表)"])
 
 # --- Tab 1: 录入 ---
 with tab1:
-    user_input = st.text_area("✏️ 记录当下的感受...", height=150, placeholder="例如：今天发生了一件事...")
+    st.write("")
+    user_input = st.text_area("✍️ 记录当下的觉察...", height=120, placeholder="在此输入你的心流记录...")
     
-    if st.button("提交审计", type="primary"):
+    if st.button("⚡️ 铸造情绪资产 (Mint Assets)", type="primary"):
         if not user_input or not api_key:
-            st.warning("请检查配置")
+            st.toast("⚠️ 请输入内容或检查 Key")
         else:
-            with st.spinner("AI 正在量化身心灵数据..."):
+            with st.spinner("🤖 AI 正在进行深度量化审计..."):
                 result = analyze_emotion(user_input, api_key)
                 
                 if "error" in result:
-                    st.error(f"出错: {result['error']}")
+                    st.error(f"系统故障: {result['error']}")
                 else:
                     save_to_db(st.session_state.user_id, user_input, result)
-                    st.toast("✅ 数据已保存")
+                    st.toast("✅ 资产已上链存证！")
                     
-                    # 结果展示区
-                    sc = result.get("scores", {})
-                    
-                    # 使用大卡片展示分数
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("平静度", sc.get("平静度", 0))
-                    c2.metric("觉察度", sc.get("觉察度", 0))
-                    c3.metric("能量", sc.get("能量水平", 0))
-                    
-                    st.info(f"📝 {result.get('summary')}")
-                    
-                    # 深度洞察
-                    with st.expander("💡 深度洞察 (Insights)", expanded=False):
+                    # === 结果展示 ===
+                    st.markdown(f"""
+                    <div style="background-color:#e8f4f8; padding:15px; border-radius:8px; border-left: 5px solid #3498db; margin-bottom: 20px;">
+                        <span style="font-size:18px;">📝</span> 
+                        <span style="font-weight:500; color:#2c3e50;">{result.get('summary')}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    with st.container():
+                        st.markdown("### 📊 资产穿透分析")
+                        sc = result.get("scores", {})
+                        render_tech_bar("平静度 (Peace)", sc.get("平静度", 0), "🕊️")
+                        render_tech_bar("觉察度 (Awareness)", sc.get("觉察度", 0), "👁️")
+                        render_tech_bar("能量值 (Energy)", sc.get("能量水平", 0), "🔋")
+
+                    st.write("")
+                    with st.expander("💡 深度洞察 (Deep Insights)", expanded=True):
                         for insight in result.get('key_insights', []):
-                            st.write(f"- {insight}")
-                            
-                    st.success(f"💊 {result.get('recommendations', {}).get('身心灵调适建议')}")
+                            st.markdown(f"**•** {insight}")
+                    
+                    st.markdown(f"""
+                    <div style="background-color:#eafaf1; padding:15px; border-radius:8px; border: 1px dashed #27ae60; margin-top: 10px;">
+                        <strong style="color:#27ae60;">💊 行动指南：</strong><br>
+                        {result.get('recommendations', {}).get('身心灵调适建议')}
+                    </div>
+                    """, unsafe_allow_html=True)
 
 # --- Tab 2: 报表 ---
 with tab2:
-    st.subheader("📈 能量走势")
-    if st.button("🔄 刷新数据"):
+    st.subheader("📈 资产K线图")
+    if st.button("🔄 刷新大盘"):
         st.rerun()
     
     data = get_history(st.session_state.user_id)
@@ -200,8 +249,6 @@ with tab2:
         for item in data:
             res = item['ai_result']
             scores = res.get('scores', {})
-            
-            # 【关键修复】时间处理：UTC 转 北京时间 (+8小时)
             utc_time = pd.to_datetime(item['created_at'])
             bj_time = utc_time + pd.Timedelta(hours=8)
             
@@ -215,24 +262,22 @@ with tab2:
         df = pd.DataFrame(chart_data)
         df = df.sort_values('时间')
         
-        # 绘制折线图
-        st.line_chart(df, x='时间', y=['平静度', '觉察度', '能量'], color=["#4CAF50", "#2196F3", "#FFC107"])
+        st.line_chart(df, x='时间', y=['平静度', '觉察度', '能量'], color=["#2ecc71", "#3498db", "#f1c40f"])
         
         st.markdown("---")
-        st.caption("📜 历史流水 (最近50条)")
         
-        # 列表展示优化
         for item in data:
-            # 同样处理时间显示
             utc_time = pd.to_datetime(item['created_at'])
-            bj_time = utc_time + pd.Timedelta(hours=8)
-            time_str = bj_time.strftime('%Y-%m-%d %H:%M')
-            
+            time_str = (utc_time + pd.Timedelta(hours=8)).strftime('%m-%d %H:%M')
             summary = item['ai_result'].get('summary', '无摘要')
             
-            with st.expander(f"{time_str} - {summary}"):
-                st.write(f"**建议:** {item['ai_result'].get('recommendations', {}).get('身心灵调适建议')}")
-                # 只展示分数，不展示原始JSON
-                st.write(f"📊 分数: {item['ai_result'].get('scores')}")
+            with st.expander(f"{time_str} | {summary}"):
+                sc = item['ai_result'].get('scores', {})
+                st.markdown(f"""
+                <small>平静: <b style='color:{'#27ae60' if sc.get('平静度',0)>0 else '#e74c3c'}'>{sc.get('平静度')}</b> | 
+                觉察: <b>{sc.get('觉察度')}</b> | 
+                能量: <b>{sc.get('能量水平')}</b></small>
+                """, unsafe_allow_html=True)
+                st.info(f"建议: {item['ai_result'].get('recommendations', {}).get('身心灵调适建议')}")
     else:
-        st.info("暂无数据，请去录入第一条日记吧！")
+        st.info("暂无数据")
