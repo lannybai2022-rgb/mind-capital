@@ -402,16 +402,7 @@ def render_insights(insights, action_guide, risk_control, scores):
         if not risk_reason and final_risk_level != ai_risk_level:
             risk_reason = "检测到情绪状态较低"
         
-        right_content = f'''
-        <div style="background: {level_bg}; padding: 12px 16px; border-radius: 10px; border: 1px solid {level_border};">
-            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
-                <span style="font-size: 14px;">{level_icon}</span>
-                <span style="font-size: 13px; font-weight: 600; color: {level_color};">{level_text}</span>
-            </div>
-            <p style="margin: 0 0 8px; color: #78716c; font-size: 12px;">{risk_reason}</p>
-            <p style="margin: 0; color: #292524; font-size: 13px; font-weight: 500;">🛑 {brake_action}</p>
-        </div>
-        '''
+        right_content = f'<div style="background: {level_bg}; padding: 12px 16px; border-radius: 10px; border: 1px solid {level_border};"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;"><span style="font-size: 14px;">{level_icon}</span><span style="font-size: 13px; font-weight: 600; color: {level_color};">{level_text}</span></div><p style="margin: 0 0 8px; color: #78716c; font-size: 12px;">{risk_reason}</p><p style="margin: 0; color: #292524; font-size: 13px; font-weight: 500;">🛑 {brake_action}</p></div>'
     
     st.markdown(f"""<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
         <div style="background: #faf5ff; padding: 20px; border-radius: 16px; border: 1px solid #e9d5ff;">
