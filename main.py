@@ -72,7 +72,7 @@ STRICT_SYSTEM_PROMPT = """
 【任务要求】
 1. 分析与评分：仔细阅读输入文本，根据【情绪标签体系与评分标准】对用户的情绪状态进行量化评分（-5到+5）。
 2. 注意力侦测：判断用户的注意力焦点在时空坐标系中的位置。
-3. 洞察与建议：洞察1：提取核心情绪模式，并提供一条身心灵调适建议，偏“恢复/修复/能量补给”，不说教。洞察2：行动指引，偏“下一步怎么做”，如有风控刹车则优先显示风控刹车内容。
+3. 洞察与建议：提取核心情绪模式，并提供一条身心灵调适建议。
 4. 输出格式：必须严格以JSON格式输出，不包含任何额外解释性文字。
 
 【JSON输出格式】
@@ -89,8 +89,8 @@ STRICT_SYSTEM_PROMPT = """
     "focus_target": "Internal/External"
   },
   "key_insights": [
-    "洞察点1": "不超过50字。"
-    "洞察点2": "不超过50字。"
+    "洞察点1",
+    "洞察点2"
   ],
   "recommendations": {
     "身心灵调适建议": "不超过50字。"
@@ -313,8 +313,29 @@ def render_summary(summary):
         <p style="color: #334155; font-size: 17px; font-weight: 500; margin: 0;">{summary}</p>
     </div>""", unsafe_allow_html=True)
 
-def render_insights(insights, recommendation):
+def render_insights(insights, recommendation, risk_control=None):
+    """渲染洞察、建议和风险预警"""
     items = "".join([f'<li style="margin-bottom: 6px; color: #581c87; font-size: 13px;">• {i}</li>' for i in insights])
+    
+    # 风险预警部分（仅当 risk_level 不是 Low 时显示）
+    risk_html = ""
+    if risk_control and risk_control.get('risk_level', 'Low') != 'Low':
+        level = risk_control.get('risk_level', 'Medium')
+        brake = risk_control.get('brake_action', '')
+        level_color = "#ef4444" if level == "High" else "#f59e0b"
+        level_bg = "#fef2f2" if level == "High" else "#fffbeb"
+        level_border = "#fecaca" if level == "High" else "#fde68a"
+        level_text = "🚨 高风险" if level == "High" else "⚠️ 中风险"
+        
+        risk_html = f"""
+        <div style="background: {level_bg}; padding: 12px 16px; border-radius: 10px; border: 1px solid {level_border}; margin-top: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="font-size: 12px; font-weight: 600; color: {level_color};">{level_text}</span>
+            </div>
+            <p style="margin: 0; color: #92400e; font-size: 13px; font-weight: 500;">🛑 {brake}</p>
+        </div>
+        """
+    
     st.markdown(f"""<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
         <div style="background: #faf5ff; padding: 20px; border-radius: 16px; border: 1px solid #e9d5ff;">
             <h4 style="margin: 0 0 12px; font-size: 14px; color: #7c3aed;">💡 深度洞察</h4>
@@ -323,6 +344,7 @@ def render_insights(insights, recommendation):
         <div style="background: #f0fdf4; padding: 20px; border-radius: 16px; border: 1px solid #bbf7d0;">
             <h4 style="margin: 0 0 12px; font-size: 14px; color: #16a34a;">❤️ 行动指南</h4>
             <p style="margin: 0; color: #166534; font-size: 13px;">{recommendation}</p>
+            {risk_html}
         </div>
     </div>""", unsafe_allow_html=True)
 
@@ -348,7 +370,7 @@ def render_trend(data_list):
         except: continue
     
     st.markdown("""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
-        <span style="font-size: 14px; font-weight: 600; color: #334155;">🌊 Emotional Flow (Last 24h)</span>
+        <span style="font-size: 14px; font-weight: 600; color: #334155;">🌊 情绪波动 (近24小时)</span>
     </div>""", unsafe_allow_html=True)
     
     df = pd.DataFrame(df_list) if df_list else pd.DataFrame({'Time': [start_dt, end_dt], 'Score': [0, 0]})
@@ -455,8 +477,12 @@ else:
             # 2. 再显示摘要
             render_summary(latest.get('summary', ''))
             
-            # 3. 显示洞察和建议
-            render_insights(latest.get('key_insights', []), latest.get('recommendations', {}).get('身心灵调适建议', ''))
+            # 3. 显示洞察、建议和风险预警
+            render_insights(
+                latest.get('key_insights', []), 
+                latest.get('recommendations', {}).get('身心灵调适建议', ''),
+                latest.get('risk_control')  # 传入风险控制数据
+            )
         
         # 4. 输入区放最下面
         st.markdown("""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
