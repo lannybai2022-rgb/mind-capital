@@ -344,7 +344,7 @@ def render_gauge_card(scores, summary=""):
             <div style="margin-top: 12px; text-align: center;"><div style="font-size: 20px;">{icon}</div><div style="font-size: 11px; font-weight: 600; color: #64748b;">{safe_text(label)}</div></div>
         </div>"""
     
-    summary_html = f'<div style="text-align: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f1f5f9;"><p style="margin: 0; color: #64748b; font-size: 13px;">{safe_text(summary)}</p></div>' if summary else ""
+    summary_html = f'<div style="text-align: center; margin-top: 20px;"><p style="margin: 0; color: #a1a1aa; font-size: 12px;">{safe_text(summary)}</p></div>' if summary else ""
     
     st.markdown(f"""<div style="background: white; padding: 28px 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
         <div style="display: flex; justify-content: space-around; align-items: flex-end;">
