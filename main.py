@@ -90,9 +90,9 @@ STRICT_SYSTEM_PROMPT = """
 【任务要求】
 1. 分析与评分：仔细阅读输入文本，根据【情绪标签体系与评分标准】对用户的情绪状态进行量化评分（-5到+5）。
 2. 注意力侦测：判断用户的注意力焦点在时空坐标系中的位置。
-3. 洞察：提取核心情绪模式，输出2条洞察（避免空话）：
-   - 洞察1（问题面）：指向触发因素/循环模式/代价
-   - 洞察2（资源面）：指向用户做对了什么/已有的觉察/潜在力量
+3. 洞察：提取核心情绪模式，输出2条洞察（避免空话，直接输出内容，不要带"问题面/资源面"等标签）：
+   - 第1条：指向触发因素/循环模式/代价
+   - 第2条：指向用户做对了什么/已有的觉察/潜在力量
 4. 风控层：根据文本内容识别冲动外溢风险，输出risk_control对象。
 5. 建议：给出一条action_guide（≤50字，低风险偏行动指引，能量低偏恢复建议）。
 6. 输出格式：必须严格以JSON格式输出，不包含任何额外解释性文字。
@@ -111,8 +111,8 @@ STRICT_SYSTEM_PROMPT = """
     "focus_target": "Internal/External"
   },
   "key_insights": [
-    "洞察1（问题面）",
-    "洞察2（资源面）"
+    "洞察1内容",
+    "洞察2内容"
   ],
   "risk_control": {
     "risk_level": "Low",
@@ -317,7 +317,7 @@ def render_header(username, daily_limit):
     </div>
     """, unsafe_allow_html=True)
 
-def render_gauge_card(scores):
+def render_gauge_card(scores, summary=""):
     def gauge(label, score, icon, theme):
         try:
             score = int(score)
@@ -329,40 +329,40 @@ def render_gauge_card(scores):
         colors = {"peace": ("#11998e", "#38ef7d", "#0d9488"), "awareness": ("#8E2DE2", "#4A00E0", "#7c3aed"), "energy": ("#f97316", "#fbbf24", "#ea580c")}
         c = colors.get(theme)
         badge = f"+{score}" if score > 0 else str(score)
-        return f"""<div style="display: flex; flex-direction: column; align-items: center; width: 90px;">
-            <div style="position: relative; height: 140px; width: 44px; background: #f1f5f9; border-radius: 22px; overflow: hidden; border: 1px solid #e2e8f0;">
-                <div style="position: absolute; top: 6px; left: 52px; color: #94a3b8; font-size: 9px;">+5</div>
-                <div style="position: absolute; top: 50%; transform: translateY(-50%); left: 52px; color: #94a3b8; font-size: 9px;">0</div>
-                <div style="position: absolute; bottom: 6px; left: 52px; color: #94a3b8; font-size: 9px;">-5</div>
-                <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); opacity: 0.85;"></div>
-                <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: white; color: {c[2]}; font-weight: 700; font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 2px solid {c[2]}; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">{badge}</div>
+        return f"""<div style="display: flex; flex-direction: column; align-items: center; width: 100px;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <div style="position: relative; height: 140px; width: 44px; background: #f1f5f9; border-radius: 22px; overflow: hidden; border: 1px solid #e2e8f0;">
+                    <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); opacity: 0.85;"></div>
+                    <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: white; color: {c[2]}; font-weight: 700; font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 2px solid {c[2]}; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">{badge}</div>
+                </div>
+                <div style="display: flex; flex-direction: column; justify-content: space-between; height: 140px; padding: 4px 0;">
+                    <span style="font-size: 9px; color: #94a3b8;">+5</span>
+                    <span style="font-size: 9px; color: #94a3b8;">0</span>
+                    <span style="font-size: 9px; color: #94a3b8;">-5</span>
+                </div>
             </div>
             <div style="margin-top: 12px; text-align: center;"><div style="font-size: 20px;">{icon}</div><div style="font-size: 11px; font-weight: 600; color: #64748b;">{safe_text(label)}</div></div>
         </div>"""
+    
+    summary_html = f'<div style="text-align: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f1f5f9;"><p style="margin: 0; color: #64748b; font-size: 13px;">{safe_text(summary)}</p></div>' if summary else ""
     
     st.markdown(f"""<div style="background: white; padding: 28px 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
         <div style="display: flex; justify-content: space-around; align-items: flex-end;">
             {gauge("平静度", scores.get("平静度", 0), "🕊️", "peace")}
             {gauge("觉察度", scores.get("觉察度", 0), "👁️", "awareness")}
             {gauge("能量值", scores.get("能量水平", 0), "🔋", "energy")}
-        </div>
-    </div>""", unsafe_allow_html=True)
-
-def render_summary(summary):
-    st.markdown(f"""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
-        <div style="color: #94a3b8; font-size: 11px; font-weight: 600; margin-bottom: 10px;">✨ 分析摘要</div>
-        <p style="color: #334155; font-size: 17px; font-weight: 500; margin: 0;">{safe_text(summary)}</p>
+        </div>{summary_html}
     </div>""", unsafe_allow_html=True)
 
 def render_insights(insights, action_guide, risk_control, scores):
-    """渲染洞察和行动指南（含风控）"""
+    """渲染洞察和行动指南（上下两行布局）"""
     # 安全处理 insights
     safe_insights = []
     if isinstance(insights, list):
         for i in insights:
             safe_insights.append(safe_text(i))
     
-    items = "".join([f'<li style="margin-bottom: 6px; color: #581c87; font-size: 13px;">• {i}</li>' for i in safe_insights])
+    items = "".join([f'<li style="margin-bottom: 8px; color: #581c87; font-size: 14px; line-height: 1.5;">• {i}</li>' for i in safe_insights])
     
     # 获取风险等级（含分数兜底）
     ai_risk_level = "Low"
@@ -377,12 +377,10 @@ def render_insights(insights, action_guide, risk_control, scores):
     # 分数兜底
     final_risk_level = calc_risk_level(scores, ai_risk_level)
     
-    # 根据风险等级决定右侧显示内容
+    # 根据风险等级决定行动指南内容
     if final_risk_level == "Low":
-        # 低风险：显示 action_guide
-        right_content = f'<p style="margin: 0; color: #166534; font-size: 13px;">{safe_text(action_guide)}</p>'
+        action_content = f'<p style="margin: 0; color: #166534; font-size: 14px; line-height: 1.6;">{safe_text(action_guide)}</p>'
     else:
-        # 中高风险：显示刹车建议
         if final_risk_level == "High":
             level_color = "#ef4444"
             level_bg = "#fef2f2"
@@ -396,23 +394,22 @@ def render_insights(insights, action_guide, risk_control, scores):
             level_icon = "⚠️"
             level_text = "中风险"
         
-        # 如果是分数兜底触发的，补充默认提示
         if not brake_action:
             brake_action = "离开当前环境走动2分钟，或去接一杯水慢慢喝完"
         if not risk_reason and final_risk_level != ai_risk_level:
             risk_reason = "检测到情绪状态较低"
         
-        right_content = f'<div style="background: {level_bg}; padding: 12px 16px; border-radius: 10px; border: 1px solid {level_border};"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;"><span style="font-size: 14px;">{level_icon}</span><span style="font-size: 13px; font-weight: 600; color: {level_color};">{level_text}</span></div><p style="margin: 0 0 8px; color: #78716c; font-size: 12px;">{risk_reason}</p><p style="margin: 0; color: #292524; font-size: 13px; font-weight: 500;">🛑 {brake_action}</p></div>'
+        action_content = f'<div style="background: {level_bg}; padding: 12px 16px; border-radius: 10px; border: 1px solid {level_border};"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;"><span style="font-size: 14px;">{level_icon}</span><span style="font-size: 13px; font-weight: 600; color: {level_color};">{level_text}</span></div><p style="margin: 0 0 8px; color: #78716c; font-size: 12px;">{risk_reason}</p><p style="margin: 0; color: #292524; font-size: 14px; font-weight: 500;">🛑 {brake_action}</p></div>'
     
-    st.markdown(f"""<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
-        <div style="background: #faf5ff; padding: 20px; border-radius: 16px; border: 1px solid #e9d5ff;">
-            <h4 style="margin: 0 0 12px; font-size: 14px; color: #7c3aed;">💡 深度洞察</h4>
-            <ul style="margin: 0; padding: 0; list-style: none;">{items}</ul>
-        </div>
-        <div style="background: #f0fdf4; padding: 20px; border-radius: 16px; border: 1px solid #bbf7d0;">
-            <h4 style="margin: 0 0 12px; font-size: 14px; color: #16a34a;">❤️ 行动指南</h4>
-            {right_content}
-        </div>
+    # 上下两行布局
+    st.markdown(f"""<div style="background: #faf5ff; padding: 20px; border-radius: 16px; border: 1px solid #e9d5ff; margin-bottom: 12px;">
+        <h4 style="margin: 0 0 12px; font-size: 14px; color: #7c3aed;">💡 深度洞察</h4>
+        <ul style="margin: 0; padding: 0; list-style: none;">{items}</ul>
+    </div>""", unsafe_allow_html=True)
+    
+    st.markdown(f"""<div style="background: #f0fdf4; padding: 20px; border-radius: 16px; border: 1px solid #bbf7d0; margin-bottom: 16px;">
+        <h4 style="margin: 0 0 12px; font-size: 14px; color: #16a34a;">❤️ 行动指南</h4>
+        {action_content}
     </div>""", unsafe_allow_html=True)
 
 def parse_to_beijing(t_str):
@@ -540,8 +537,7 @@ else:
                     latest = {}
             
             scores = latest.get('scores', {})
-            render_gauge_card(scores)
-            render_summary(latest.get('summary', ''))
+            render_gauge_card(scores, latest.get('summary', ''))
             render_insights(
                 latest.get('key_insights', []), 
                 latest.get('recommendations', {}).get('action_guide', ''),
