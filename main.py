@@ -138,6 +138,11 @@ html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
 .stTabs [data-baseweb="tab-list"] { gap: 8px; background: white; padding: 6px; border-radius: 14px; border: 1px solid #e2e8f0; }
 .stTabs [data-baseweb="tab"] { border-radius: 10px; padding: 10px 20px; font-weight: 500; }
 .stTabs [aria-selected="true"] { background: #f0fdfa !important; color: #0d9488 !important; }
+/* 隐藏侧边栏（修复微信浏览器图标显示问题） */
+[data-testid="collapsedControl"] { display: none !important; }
+[data-testid="stSidebar"] { display: none !important; }
+button[kind="headerNoPadding"] { display: none !important; }
+.st-emotion-cache-1dp5vir { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -515,12 +520,6 @@ if not st.session_state.logged_in:
 else:
     username = st.session_state.username
     daily_limit = st.session_state.daily_limit
-    
-    with st.sidebar:
-        st.markdown(f"**当前用户:** {username}")
-        if st.button("退出登录"):
-            st.session_state.logged_in = False
-            st.rerun()
     
     render_header(username, daily_limit)
     history = get_history(username)
