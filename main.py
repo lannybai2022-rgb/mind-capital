@@ -202,11 +202,25 @@ def get_history(user_id, limit=200):
 
 # ================= 6. AI 逻辑 =================
 def clean_json_string(s):
+    """清理 LLM 返回的 JSON 字符串"""
+    if not s:
+        return "{}"
+    
+    # 移除 markdown 代码块标记
+    s = re.sub(r'```json\s*', '', s)
+    s = re.sub(r'```\s*', '', s)
+    
+    # 提取 JSON 对象
     match = re.search(r'\{[\s\S]*\}', s)
-    if match: s = match.group()
-    s = re.sub(r',\s*\}', '}', s)
-    s = re.sub(r',\s*\]', ']', s)
-    return s
+    if match:
+        s = match.group()
+    
+    # 修复常见 JSON 问题
+    s = re.sub(r',\s*\}', '}', s)  # 移除尾随逗号
+    s = re.sub(r',\s*\]', ']', s)  # 移除数组尾随逗号
+    s = re.sub(r':\s*\+(\d)', r': \1', s)  # 移除正号 +1 -> 1
+    
+    return s.strip()
 
 def analyze_emotion(text, api_key):
     client = openai.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
@@ -216,7 +230,15 @@ def analyze_emotion(text, api_key):
             messages=[{"role": "system", "content": STRICT_SYSTEM_PROMPT}, {"role": "user", "content": text}],
             temperature=0.4
         )
-        return json.loads(clean_json_string(response.choices[0].message.content))
+        content = response.choices[0].message.content
+        cleaned = clean_json_string(content)
+        
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            # 如果还是解析失败，返回错误信息和原始内容
+            return {"error": f"JSON解析失败: {str(e)}", "raw": content[:500]}
+            
     except Exception as e:
         return {"error": str(e)}
 
