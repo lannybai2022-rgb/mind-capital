@@ -185,11 +185,27 @@ def check_quota(username, daily_limit):
 
 # ================= 5. 数据存储 =================
 def save_to_db(user_id, text, json_result):
+    """保存到数据库"""
     sb = init_supabase()
     if sb:
         try:
-            sb.table("emotion_logs").insert({"user_id": user_id, "user_input": text, "ai_result": json_result}).execute()
-        except: pass
+            # 确保 ai_result 是 JSON 字符串格式
+            if isinstance(json_result, dict):
+                ai_result_str = json.dumps(json_result, ensure_ascii=False)
+            else:
+                ai_result_str = json_result
+            
+            result = sb.table("emotion_logs").insert({
+                "user_id": user_id, 
+                "user_input": text, 
+                "ai_result": ai_result_str
+            }).execute()
+            
+            return True
+        except Exception as e:
+            st.error(f"保存失败: {e}")
+            return False
+    return False
 
 def get_history(user_id, limit=200):
     sb = init_supabase()
