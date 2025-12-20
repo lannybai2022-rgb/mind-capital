@@ -406,15 +406,21 @@ else:
     tab1, tab2 = st.tabs(["✨ Record", "🗺️ Focus Map"])
     
     with tab1:
-        # 显示最新结果
+        # 显示最新结果（顺序：仪表盘 → 摘要 → 洞察）
         if history:
             latest = history[0]['ai_result']
             if isinstance(latest, str): latest = json.loads(latest)
-            render_trend(history)
-            render_summary(latest.get('summary', ''))
+            
+            # 1. 先显示仪表盘
             render_gauge_card(latest.get('scores', {}))
+            
+            # 2. 再显示摘要
+            render_summary(latest.get('summary', ''))
+            
+            # 3. 显示洞察和建议
+            render_insights(latest.get('key_insights', []), latest.get('recommendations', {}).get('身心灵调适建议', ''))
         
-        # 输入区
+        # 4. 输入区放最下面
         st.markdown("""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
             <label style="font-size: 14px; font-weight: 600; color: #334155;">How are you feeling right now?</label>
         </div>""", unsafe_allow_html=True)
@@ -442,12 +448,6 @@ else:
         
         if not has_quota:
             st.warning(f"⚠️ 今日配额已用完 ({daily_limit}/{daily_limit})")
-        
-        # 显示洞察
-        if history:
-            latest = history[0]['ai_result']
-            if isinstance(latest, str): latest = json.loads(latest)
-            render_insights(latest.get('key_insights', []), latest.get('recommendations', {}).get('身心灵调适建议', ''))
     
     with tab2:
         render_trend(history)
