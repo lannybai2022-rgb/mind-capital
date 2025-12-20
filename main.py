@@ -6,6 +6,7 @@ import pandas as pd
 import re
 import altair as alt
 from supabase import create_client
+import html
 
 # ================= 1. 核心 Prompt =================
 STRICT_SYSTEM_PROMPT = """
@@ -69,16 +70,37 @@ STRICT_SYSTEM_PROMPT = """
    - "Internal": 关注自我感受、身体、想法
    - "External": 关注他人、环境、任务、客观事件
 
+【风控层】
+目标：识别"冲动外溢风险"，给出可立即执行的"行为刹车"建议。
+
+风险等级判定：
+| 等级 | 触发条件 |
+| High | 自伤/他伤表述、明确暴力威胁、"现在就去做"的冲动冲刺 |
+| Medium | 人身攻击/侮辱（如傻X、垃圾）、报复暗示、"忍不了"但未行动 |
+| Low | 无上述信号 |
+
+输出字段：
+- risk_level：Low / Medium / High
+- risk_reason：一句话说明风险原因（≤25字，Low时留空）
+- brake_action：身体层面的刹车建议（≤35字，Low时留空）
+  示例：「离开当前环境走动2分钟」「把手机放下，看向窗外」「用力攥拳再松开5次」「去接一杯水慢慢喝完」
+
+注意：若出现自伤/他伤表述，risk_level必须为High，brake_action必须包含"停止当前行为"的指引。
+
 【任务要求】
 1. 分析与评分：仔细阅读输入文本，根据【情绪标签体系与评分标准】对用户的情绪状态进行量化评分（-5到+5）。
 2. 注意力侦测：判断用户的注意力焦点在时空坐标系中的位置。
-3. 洞察与建议：提取核心情绪模式，并提供一条身心灵调适建议。
-4. 输出格式：必须严格以JSON格式输出，不包含任何额外解释性文字。
+3. 洞察：提取核心情绪模式，输出2条洞察（避免空话）：
+   - 洞察1（问题面）：指向触发因素/循环模式/代价
+   - 洞察2（资源面）：指向用户做对了什么/已有的觉察/潜在力量
+4. 风控层：根据文本内容识别冲动外溢风险，输出risk_control对象。
+5. 建议：给出一条action_guide（≤50字，低风险偏行动指引，能量低偏恢复建议）。
+6. 输出格式：必须严格以JSON格式输出，不包含任何额外解释性文字。
 
 【JSON输出格式】
 {
   "date": "YYYY-MM-DD",
-  "summary": "对用户情绪日记的简短总结，不超过30字。",
+  "summary": "不超过30字",
   "scores": {
     "平静度": 0,
     "觉察度": 0,
@@ -89,11 +111,16 @@ STRICT_SYSTEM_PROMPT = """
     "focus_target": "Internal/External"
   },
   "key_insights": [
-    "洞察点1",
-    "洞察点2"
+    "洞察1（问题面）",
+    "洞察2（资源面）"
   ],
+  "risk_control": {
+    "risk_level": "Low",
+    "risk_reason": "",
+    "brake_action": ""
+  },
   "recommendations": {
-    "身心灵调适建议": "不超过50字。"
+    "action_guide": "不超过50字"
   }
 }
 """
@@ -124,7 +151,6 @@ def init_supabase():
 
 # ================= 4. 用户认证系统 =================
 def verify_login(username, password):
-    """验证登录"""
     sb = init_supabase()
     if not sb:
         return False, "数据库未连接", None
@@ -132,10 +158,8 @@ def verify_login(username, password):
         res = sb.table("test_accounts").select("*").eq("username", username).eq("password", password).execute()
         if res.data and len(res.data) > 0:
             user = res.data[0]
-            # 检查是否激活
             if not user.get('is_active', True):
                 return False, "账号已被禁用", None
-            # 检查是否过期
             expires = pd.to_datetime(user['expires_at'])
             if expires.tz_localize(None) < datetime.datetime.now():
                 return False, "账号已过期", None
@@ -145,7 +169,6 @@ def verify_login(username, password):
         return False, f"验证失败: {e}", None
 
 def get_today_usage(username):
-    """获取今日用量"""
     sb = init_supabase()
     if not sb:
         return 0
@@ -160,7 +183,6 @@ def get_today_usage(username):
         return 0
 
 def increment_usage(username):
-    """增加用量（每日+总计）"""
     sb = init_supabase()
     if not sb:
         return
@@ -179,28 +201,23 @@ def increment_usage(username):
         pass
 
 def check_quota(username, daily_limit):
-    """检查配额"""
     used = get_today_usage(username)
     return used < daily_limit, daily_limit - used, used
 
 # ================= 5. 数据存储 =================
 def save_to_db(user_id, text, json_result):
-    """保存到数据库"""
     sb = init_supabase()
     if sb:
         try:
-            # 确保 ai_result 是 JSON 字符串格式
             if isinstance(json_result, dict):
                 ai_result_str = json.dumps(json_result, ensure_ascii=False)
             else:
                 ai_result_str = json_result
-            
-            result = sb.table("emotion_logs").insert({
+            sb.table("emotion_logs").insert({
                 "user_id": user_id, 
                 "user_input": text, 
                 "ai_result": ai_result_str
             }).execute()
-            
             return True
         except Exception as e:
             st.error(f"保存失败: {e}")
@@ -218,24 +235,16 @@ def get_history(user_id, limit=200):
 
 # ================= 6. AI 逻辑 =================
 def clean_json_string(s):
-    """清理 LLM 返回的 JSON 字符串"""
     if not s:
         return "{}"
-    
-    # 移除 markdown 代码块标记
     s = re.sub(r'```json\s*', '', s)
     s = re.sub(r'```\s*', '', s)
-    
-    # 提取 JSON 对象
     match = re.search(r'\{[\s\S]*\}', s)
     if match:
         s = match.group()
-    
-    # 修复常见 JSON 问题
-    s = re.sub(r',\s*\}', '}', s)  # 移除尾随逗号
-    s = re.sub(r',\s*\]', ']', s)  # 移除数组尾随逗号
-    s = re.sub(r':\s*\+(\d)', r': \1', s)  # 移除正号 +1 -> 1
-    
+    s = re.sub(r',\s*\}', '}', s)
+    s = re.sub(r',\s*\]', ']', s)
+    s = re.sub(r':\s*\+(\d)', r': \1', s)
     return s.strip()
 
 def analyze_emotion(text, api_key):
@@ -248,17 +257,43 @@ def analyze_emotion(text, api_key):
         )
         content = response.choices[0].message.content
         cleaned = clean_json_string(content)
-        
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError as e:
-            # 如果还是解析失败，返回错误信息和原始内容
             return {"error": f"JSON解析失败: {str(e)}", "raw": content[:500]}
-            
     except Exception as e:
         return {"error": str(e)}
 
-# ================= 7. UI 组件 =================
+# ================= 7. 工具函数 =================
+def safe_text(text):
+    """安全处理文本，防止HTML注入"""
+    if not text:
+        return ""
+    text = html.escape(str(text))
+    text = re.sub(r'&lt;/?div&gt;', '', text)
+    text = re.sub(r'&lt;/?p&gt;', '', text)
+    text = re.sub(r'&lt;[^&]*&gt;', '', text)
+    return text.strip()
+
+def calc_risk_level(scores, ai_risk_level):
+    """分数兜底：如果分数很低，自动升级风险等级"""
+    peace = scores.get('平静度', 0)
+    energy = scores.get('能量水平', 0)
+    
+    try:
+        peace = int(peace)
+        energy = int(energy)
+    except:
+        peace, energy = 0, 0
+    
+    # 分数兜底逻辑
+    if peace <= -4 or energy <= -4:
+        if ai_risk_level == "Low":
+            return "Medium"
+    
+    return ai_risk_level
+
+# ================= 8. UI 组件 =================
 def render_header(username, daily_limit):
     used = get_today_usage(username)
     remaining = daily_limit - used
@@ -276,7 +311,7 @@ def render_header(username, daily_limit):
                 <div style="font-size: 14px; font-weight: 600; color: {color};">{remaining}/{daily_limit}</div>
             </div>
             <div style="background: #f1f5f9; padding: 6px 12px; border-radius: 20px;">
-                <span style="font-size: 13px; font-weight: 500; color: #475569;">👤 {username}</span>
+                <span style="font-size: 13px; font-weight: 500; color: #475569;">👤 {safe_text(username)}</span>
             </div>
         </div>
     </div>
@@ -284,6 +319,12 @@ def render_header(username, daily_limit):
 
 def render_gauge_card(scores):
     def gauge(label, score, icon, theme):
+        try:
+            score = int(score)
+        except:
+            score = 0
+        score = max(-5, min(5, score))
+        
         percent = (score + 5) * 10
         colors = {"peace": ("#11998e", "#38ef7d", "#0d9488"), "awareness": ("#8E2DE2", "#4A00E0", "#7c3aed"), "energy": ("#f97316", "#fbbf24", "#ea580c")}
         c = colors.get(theme)
@@ -296,7 +337,7 @@ def render_gauge_card(scores):
                 <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); opacity: 0.85;"></div>
                 <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: white; color: {c[2]}; font-weight: 700; font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 2px solid {c[2]}; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">{badge}</div>
             </div>
-            <div style="margin-top: 12px; text-align: center;"><div style="font-size: 20px;">{icon}</div><div style="font-size: 11px; font-weight: 600; color: #64748b;">{label}</div></div>
+            <div style="margin-top: 12px; text-align: center;"><div style="font-size: 20px;">{icon}</div><div style="font-size: 11px; font-weight: 600; color: #64748b;">{safe_text(label)}</div></div>
         </div>"""
     
     st.markdown(f"""<div style="background: white; padding: 28px 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
@@ -310,31 +351,67 @@ def render_gauge_card(scores):
 def render_summary(summary):
     st.markdown(f"""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
         <div style="color: #94a3b8; font-size: 11px; font-weight: 600; margin-bottom: 10px;">✨ 分析摘要</div>
-        <p style="color: #334155; font-size: 17px; font-weight: 500; margin: 0;">{summary}</p>
+        <p style="color: #334155; font-size: 17px; font-weight: 500; margin: 0;">{safe_text(summary)}</p>
     </div>""", unsafe_allow_html=True)
 
-def render_insights(insights, recommendation, risk_control=None):
-    """渲染洞察、建议和风险预警"""
-    items = "".join([f'<li style="margin-bottom: 6px; color: #581c87; font-size: 13px;">• {i}</li>' for i in insights])
+def render_insights(insights, action_guide, risk_control, scores):
+    """渲染洞察和行动指南（含风控）"""
+    # 安全处理 insights
+    safe_insights = []
+    if isinstance(insights, list):
+        for i in insights:
+            safe_insights.append(safe_text(i))
     
-    # 风险预警部分（仅当 risk_level 不是 Low 时显示）
-    risk_html = ""
-    if risk_control and risk_control.get('risk_level', 'Low') != 'Low':
-        level = risk_control.get('risk_level', 'Medium')
-        brake = risk_control.get('brake_action', '')
-        level_color = "#ef4444" if level == "High" else "#f59e0b"
-        level_bg = "#fef2f2" if level == "High" else "#fffbeb"
-        level_border = "#fecaca" if level == "High" else "#fde68a"
-        level_text = "🚨 高风险" if level == "High" else "⚠️ 中风险"
+    items = "".join([f'<li style="margin-bottom: 6px; color: #581c87; font-size: 13px;">• {i}</li>' for i in safe_insights])
+    
+    # 获取风险等级（含分数兜底）
+    ai_risk_level = "Low"
+    risk_reason = ""
+    brake_action = ""
+    
+    if isinstance(risk_control, dict):
+        ai_risk_level = risk_control.get('risk_level', 'Low')
+        risk_reason = safe_text(risk_control.get('risk_reason', ''))
+        brake_action = safe_text(risk_control.get('brake_action', ''))
+    
+    # 分数兜底
+    final_risk_level = calc_risk_level(scores, ai_risk_level)
+    
+    # 根据风险等级决定右侧显示内容
+    if final_risk_level == "Low":
+        # 低风险：显示 action_guide
+        right_content = f'<p style="margin: 0; color: #166534; font-size: 13px;">{safe_text(action_guide)}</p>'
+    else:
+        # 中高风险：显示刹车建议
+        if final_risk_level == "High":
+            level_color = "#ef4444"
+            level_bg = "#fef2f2"
+            level_border = "#fecaca"
+            level_icon = "🚨"
+            level_text = "高风险"
+        else:
+            level_color = "#f59e0b"
+            level_bg = "#fffbeb"
+            level_border = "#fde68a"
+            level_icon = "⚠️"
+            level_text = "中风险"
         
-        risk_html = f"""
-        <div style="background: {level_bg}; padding: 12px 16px; border-radius: 10px; border: 1px solid {level_border}; margin-top: 12px;">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="font-size: 12px; font-weight: 600; color: {level_color};">{level_text}</span>
+        # 如果是分数兜底触发的，补充默认提示
+        if not brake_action:
+            brake_action = "离开当前环境走动2分钟，或去接一杯水慢慢喝完"
+        if not risk_reason and final_risk_level != ai_risk_level:
+            risk_reason = "检测到情绪状态较低"
+        
+        right_content = f'''
+        <div style="background: {level_bg}; padding: 12px 16px; border-radius: 10px; border: 1px solid {level_border};">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+                <span style="font-size: 14px;">{level_icon}</span>
+                <span style="font-size: 13px; font-weight: 600; color: {level_color};">{level_text}</span>
             </div>
-            <p style="margin: 0; color: #92400e; font-size: 13px; font-weight: 500;">🛑 {brake}</p>
+            <p style="margin: 0 0 8px; color: #78716c; font-size: 12px;">{risk_reason}</p>
+            <p style="margin: 0; color: #292524; font-size: 13px; font-weight: 500;">🛑 {brake_action}</p>
         </div>
-        """
+        '''
     
     st.markdown(f"""<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
         <div style="background: #faf5ff; padding: 20px; border-radius: 16px; border: 1px solid #e9d5ff;">
@@ -343,8 +420,7 @@ def render_insights(insights, recommendation, risk_control=None):
         </div>
         <div style="background: #f0fdf4; padding: 20px; border-radius: 16px; border: 1px solid #bbf7d0;">
             <h4 style="margin: 0 0 12px; font-size: 14px; color: #16a34a;">❤️ 行动指南</h4>
-            <p style="margin: 0; color: #166534; font-size: 13px;">{recommendation}</p>
-            {risk_html}
+            {right_content}
         </div>
     </div>""", unsafe_allow_html=True)
 
@@ -414,7 +490,7 @@ def render_focus_map(data_list):
     ).properties(height=180).configure_view(strokeWidth=0)
     st.altair_chart(chart, use_container_width=True)
 
-# ================= 8. 登录页面 =================
+# ================= 9. 登录页面 =================
 def render_login():
     st.markdown("""<div style="text-align: center; margin-top: 60px;">
         <div style="background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 16px; border-radius: 16px; display: inline-block; margin-bottom: 20px; font-size: 32px;">🧠</div>
@@ -440,11 +516,10 @@ def render_login():
                 else:
                     st.warning("请输入用户名和密码")
 
-# ================= 9. 主程序 =================
+# ================= 10. 主程序 =================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-# 获取API Key
 api_key = st.secrets.get("OPENAI_API_KEY", "")
 
 if not st.session_state.logged_in:
@@ -453,7 +528,6 @@ else:
     username = st.session_state.username
     daily_limit = st.session_state.daily_limit
     
-    # 侧边栏退出按钮
     with st.sidebar:
         st.markdown(f"**当前用户:** {username}")
         if st.button("退出登录"):
@@ -466,32 +540,30 @@ else:
     tab1, tab2 = st.tabs(["✨ 觉察记录", "🗺️ 注意力地图"])
     
     with tab1:
-        # 显示最新结果（顺序：仪表盘 → 摘要 → 洞察）
         if history:
             latest = history[0]['ai_result']
-            if isinstance(latest, str): latest = json.loads(latest)
+            if isinstance(latest, str): 
+                try:
+                    latest = json.loads(latest)
+                except:
+                    latest = {}
             
-            # 1. 先显示仪表盘
-            render_gauge_card(latest.get('scores', {}))
-            
-            # 2. 再显示摘要
+            scores = latest.get('scores', {})
+            render_gauge_card(scores)
             render_summary(latest.get('summary', ''))
-            
-            # 3. 显示洞察、建议和风险预警
             render_insights(
                 latest.get('key_insights', []), 
-                latest.get('recommendations', {}).get('身心灵调适建议', ''),
-                latest.get('risk_control')  # 传入风险控制数据
+                latest.get('recommendations', {}).get('action_guide', ''),
+                latest.get('risk_control', {}),
+                scores
             )
         
-        # 4. 输入区放最下面
         st.markdown("""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
             <label style="font-size: 14px; font-weight: 600; color: #334155;">此刻你的感受如何？</label>
         </div>""", unsafe_allow_html=True)
         
         user_input = st.text_area("", height=120, placeholder="描述此刻的身体感受、念头或所处情境...", label_visibility="collapsed")
         
-        # 检查配额
         has_quota, remaining, used = check_quota(username, daily_limit)
         
         if st.button("⚡ 铸造情绪资产", disabled=not has_quota):
@@ -517,10 +589,13 @@ else:
         render_trend(history)
         render_focus_map(history)
         
-        # 显示最新的注意力分析说明
         if history:
             latest = history[0]['ai_result']
-            if isinstance(latest, str): latest = json.loads(latest)
+            if isinstance(latest, str): 
+                try:
+                    latest = json.loads(latest)
+                except:
+                    latest = {}
             focus = latest.get('focus_analysis', {})
             time_ori = focus.get('time_orientation', 'Present')
             target = focus.get('focus_target', 'Internal')
