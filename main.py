@@ -99,7 +99,6 @@ STRICT_SYSTEM_PROMPT = """
 
 【JSON输出格式】
 {
-  "date": "YYYY-MM-DD",
   "summary": "不超过30字",
   "scores": {
     "平静度": 0,
@@ -561,6 +560,8 @@ else:
                 with st.spinner("🧠 AI 分析中..."):
                     result = analyze_emotion(user_input, api_key)
                     if "error" not in result:
+                        # 系统拼接日期，确保准确
+                        result['date'] = datetime.date.today().isoformat()
                         save_to_db(username, user_input, result)
                         increment_usage(username)
                         st.toast("✅ 铸造成功！")
