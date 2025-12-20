@@ -249,9 +249,9 @@ def render_header(username, daily_limit):
     color = "#10b981" if remaining > 10 else "#f59e0b" if remaining > 3 else "#ef4444"
     
     st.markdown(f"""
-    <div style="background: white; border-bottom: 1px solid #e2e8f0; padding: 12px 20px; margin: -1rem -1rem 1.5rem -1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <div style="background: white; border-bottom: 1px solid #e2e8f0; padding: 12px 20px; margin: -6rem -1rem 1.5rem -1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="display: flex; align-items: center; gap: 10px;">
-            <div style="background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%); color: white; padding: 8px; border-radius: 10px;">🧠</div>
+            <div style="background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%); color: white; padding: 8px; border-radius: 10px; font-size: 20px;">🧠</div>
             <span style="font-weight: 700; font-size: 18px; color: #1e293b;">MindfulFocus AI</span>
         </div>
         <div style="display: flex; align-items: center; gap: 16px;">
@@ -285,15 +285,15 @@ def render_gauge_card(scores):
     
     st.markdown(f"""<div style="background: white; padding: 28px 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
         <div style="display: flex; justify-content: space-around; align-items: flex-end;">
-            {gauge("Peace", scores.get("平静度", 0), "🕊️", "peace")}
-            {gauge("Awareness", scores.get("觉察度", 0), "👁️", "awareness")}
-            {gauge("Energy", scores.get("能量水平", 0), "🔋", "energy")}
+            {gauge("平静度", scores.get("平静度", 0), "🕊️", "peace")}
+            {gauge("觉察度", scores.get("觉察度", 0), "👁️", "awareness")}
+            {gauge("能量值", scores.get("能量水平", 0), "🔋", "energy")}
         </div>
     </div>""", unsafe_allow_html=True)
 
 def render_summary(summary):
     st.markdown(f"""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
-        <div style="color: #94a3b8; font-size: 11px; font-weight: 600; margin-bottom: 10px;">✨ ANALYSIS SUMMARY</div>
+        <div style="color: #94a3b8; font-size: 11px; font-weight: 600; margin-bottom: 10px;">✨ 分析摘要</div>
         <p style="color: #334155; font-size: 17px; font-weight: 500; margin: 0;">{summary}</p>
     </div>""", unsafe_allow_html=True)
 
@@ -301,11 +301,11 @@ def render_insights(insights, recommendation):
     items = "".join([f'<li style="margin-bottom: 6px; color: #581c87; font-size: 13px;">• {i}</li>' for i in insights])
     st.markdown(f"""<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
         <div style="background: #faf5ff; padding: 20px; border-radius: 16px; border: 1px solid #e9d5ff;">
-            <h4 style="margin: 0 0 12px; font-size: 14px; color: #7c3aed;">💡 Deep Insights</h4>
+            <h4 style="margin: 0 0 12px; font-size: 14px; color: #7c3aed;">💡 深度洞察</h4>
             <ul style="margin: 0; padding: 0; list-style: none;">{items}</ul>
         </div>
         <div style="background: #f0fdf4; padding: 20px; border-radius: 16px; border: 1px solid #bbf7d0;">
-            <h4 style="margin: 0 0 12px; font-size: 14px; color: #16a34a;">❤️ Action Guide</h4>
+            <h4 style="margin: 0 0 12px; font-size: 14px; color: #16a34a;">❤️ 行动指南</h4>
             <p style="margin: 0; color: #166534; font-size: 13px;">{recommendation}</p>
         </div>
     </div>""", unsafe_allow_html=True)
@@ -363,8 +363,8 @@ def render_focus_map(data_list):
     
     st.markdown("""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
-            <span style="font-size: 14px; font-weight: 600; color: #334155;">🗺️ Attention Map</span>
-            <span style="font-size: 11px; color: #64748b;"><span style="color: #8b5cf6;">●</span> Internal <span style="color: #f97316;">●</span> External</span>
+            <span style="font-size: 14px; font-weight: 600; color: #334155;">🗺️ 注意力地图</span>
+            <span style="font-size: 11px; color: #64748b;"><span style="color: #8b5cf6;">●</span> 内在 <span style="color: #f97316;">●</span> 外在</span>
         </div>
     </div>""", unsafe_allow_html=True)
     
@@ -425,7 +425,7 @@ else:
     render_header(username, daily_limit)
     history = get_history(username)
     
-    tab1, tab2 = st.tabs(["✨ Record", "🗺️ Focus Map"])
+    tab1, tab2 = st.tabs(["✨ 觉察记录", "🗺️ 注意力地图"])
     
     with tab1:
         # 显示最新结果（顺序：仪表盘 → 摘要 → 洞察）
@@ -444,7 +444,7 @@ else:
         
         # 4. 输入区放最下面
         st.markdown("""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
-            <label style="font-size: 14px; font-weight: 600; color: #334155;">How are you feeling right now?</label>
+            <label style="font-size: 14px; font-weight: 600; color: #334155;">此刻你的感受如何？</label>
         </div>""", unsafe_allow_html=True)
         
         user_input = st.text_area("", height=120, placeholder="描述此刻的身体感受、念头或所处情境...", label_visibility="collapsed")
@@ -452,7 +452,7 @@ else:
         # 检查配额
         has_quota, remaining, used = check_quota(username, daily_limit)
         
-        if st.button("⚡ Mint Emotional Asset", disabled=not has_quota):
+        if st.button("⚡ 铸造情绪资产", disabled=not has_quota):
             if not user_input:
                 st.warning("请先输入内容")
             elif not api_key:
@@ -499,3 +499,5 @@ else:
                     </div>
                 </div>
             </div>""", unsafe_allow_html=True)
+        else:
+            st.info("暂无数据，请先在「觉察记录」页面记录。")
