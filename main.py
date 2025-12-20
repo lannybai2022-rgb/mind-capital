@@ -442,7 +442,7 @@ def render_trend(data_list):
     </div>""", unsafe_allow_html=True)
     
     df = pd.DataFrame(df_list) if df_list else pd.DataFrame({'Time': [start_dt, end_dt], 'Score': [0, 0]})
-    chart = alt.Chart(df).mark_area(interpolate='cardinal', line={'color': '#0d9488', 'strokeWidth': 3},
+    chart = alt.Chart(df).mark_area(interpolate='monotone', line={'color': '#0d9488', 'strokeWidth': 2},
         color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color='rgba(20,184,166,0.3)', offset=0), alt.GradientStop(color='rgba(20,184,166,0)', offset=1)], x1=1, x2=1, y1=1, y2=0)
     ).encode(
         x=alt.X('Time:T', scale=alt.Scale(domain=[start_dt, end_dt]), axis=alt.Axis(format='%H:%M', title='')),
