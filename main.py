@@ -7,6 +7,9 @@ import re
 import altair as alt
 from supabase import create_client
 import html
+import hashlib
+import base64
+import extra_streamlit_components as stx
 
 # ================= 1. 核心 Prompt =================
 STRICT_SYSTEM_PROMPT = """
@@ -109,11 +112,12 @@ st.markdown("""
 html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
 .block-container { padding-top: 1rem; max-width: 800px; }
 .stTextArea textarea { font-size: 16px !important; border-radius: 12px !important; border: 1px solid #e2e8f0 !important; background: #f8fafc !important; }
-.stButton > button { width: 100%; border-radius: 12px !important; height: 52px !important; font-weight: 600 !important; background: linear-gradient(135deg, #14b8a6 0%, #10b981 100%) !important; border: none !important; color: white !important; }
+.stButton > button { border-radius: 12px !important; height: 52px !important; font-weight: 600 !important; background: linear-gradient(135deg, #14b8a6 0%, #10b981 100%) !important; border: none !important; color: white !important; }
+.stButton > button:disabled { background: #cbd5e1 !important; color: #94a3b8 !important; }
 .stTabs [data-baseweb="tab-list"] { gap: 8px; background: white; padding: 6px; border-radius: 14px; border: 1px solid #e2e8f0; }
 .stTabs [data-baseweb="tab"] { border-radius: 10px; padding: 10px 20px; font-weight: 500; }
 .stTabs [aria-selected="true"] { background: #f0fdfa !important; color: #0d9488 !important; }
-/* 隐藏侧边栏（修复微信浏览器图标显示问题） */
+/* 隐藏侧边栏 */
 [data-testid="collapsedControl"] { display: none !important; }
 [data-testid="stSidebar"] { display: none !important; }
 button[kind="headerNoPadding"] { display: none !important; }
@@ -121,7 +125,44 @@ button[kind="headerNoPadding"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ================= 3. 数据库连接 =================
+# ================= 3. Cookie 管理 =================
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+def get_secret_key():
+    """获取加密密钥"""
+    return st.secrets.get("COOKIE_SECRET", "mindfocus_default_secret_key_2024")
+
+def generate_auth_token(username, daily_limit, days_valid=7):
+    """生成加密的认证token"""
+    secret = get_secret_key()
+    expire_ts = int((datetime.datetime.now() + datetime.timedelta(days=days_valid)).timestamp())
+    payload = f"{username}:{daily_limit}:{expire_ts}"
+    signature = hashlib.sha256(f"{payload}:{secret}".encode()).hexdigest()[:16]
+    token = base64.b64encode(f"{payload}:{signature}".encode()).decode()
+    return token
+
+def verify_auth_token(token):
+    """验证token并返回用户信息"""
+    try:
+        secret = get_secret_key()
+        decoded = base64.b64decode(token.encode()).decode()
+        parts = decoded.rsplit(':', 1)
+        if len(parts) != 2:
+            return None
+        payload, signature = parts
+        expected_sig = hashlib.sha256(f"{payload}:{secret}".encode()).hexdigest()[:16]
+        if signature != expected_sig:
+            return None
+        username, daily_limit, expire_ts = payload.split(':')
+        if int(expire_ts) < datetime.datetime.now().timestamp():
+            return None
+        return {"username": username, "daily_limit": int(daily_limit)}
+    except:
+        return None
+
+# ================= 4. 数据库连接 =================
 @st.cache_resource
 def init_supabase():
     try:
@@ -129,7 +170,7 @@ def init_supabase():
     except:
         return None
 
-# ================= 4. 用户认证系统 =================
+# ================= 5. 用户认证系统 =================
 def verify_login(username, password):
     sb = init_supabase()
     if not sb:
@@ -184,7 +225,7 @@ def check_quota(username, daily_limit):
     used = get_today_usage(username)
     return used < daily_limit, daily_limit - used, used
 
-# ================= 5. 数据存储 =================
+# ================= 6. 数据存储 =================
 def save_to_db(user_id, text, json_result):
     sb = init_supabase()
     if sb:
@@ -213,7 +254,7 @@ def get_history(user_id, limit=200):
         except: pass
     return []
 
-# ================= 6. AI 逻辑 =================
+# ================= 7. AI 逻辑 =================
 def clean_json_string(s):
     if not s:
         return "{}"
@@ -244,7 +285,7 @@ def analyze_emotion(text, api_key):
     except Exception as e:
         return {"error": str(e)}
 
-# ================= 7. 工具函数 =================
+# ================= 8. 工具函数 =================
 def safe_text(text):
     """安全处理文本，防止HTML注入"""
     if not text:
@@ -258,10 +299,8 @@ def safe_text(text):
 def get_recommendation(result):
     """兼容新旧两种字段名"""
     recs = result.get('recommendations', {})
-    # 优先读取新字段名
     if '身心灵调适建议' in recs:
         return recs['身心灵调适建议']
-    # 兼容旧字段名
     if 'action_guide' in recs:
         return recs['action_guide']
     return ''
@@ -273,20 +312,18 @@ def should_show_risk_alert(scores, risk_alert):
         peace = int(peace)
     except:
         peace = 0
-    
-    # 平静度≤-3 且 risk_alert 有内容时显示
     if peace <= -3 and risk_alert and risk_alert != "null" and risk_alert.lower() != "null":
         return True
     return False
 
-# ================= 8. UI 组件 =================
+# ================= 9. UI 组件 =================
 def render_header(username, daily_limit):
     used = get_today_usage(username)
     remaining = daily_limit - used
     color = "#10b981" if remaining > 10 else "#f59e0b" if remaining > 3 else "#ef4444"
     
     st.markdown(f"""
-    <div style="background: white; border-bottom: 1px solid #e2e8f0; padding: 12px 20px; margin: -6rem -1rem 1.5rem -1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <div style="background: white; border-bottom: 1px solid #e2e8f0; padding: 12px 20px; margin: -6rem -1rem 1rem -1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="display: flex; align-items: center; gap: 10px;">
             <div style="background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%); color: white; padding: 8px; border-radius: 10px; font-size: 20px;">🧠</div>
             <span style="font-weight: 700; font-size: 18px; color: #1e293b;">MindfulFocus AI</span>
@@ -304,7 +341,7 @@ def render_header(username, daily_limit):
     """, unsafe_allow_html=True)
 
 def render_gauge_card(scores):
-    """渲染温度计卡片 - 已移除summary显示"""
+    """渲染温度计卡片"""
     def gauge(label, score, icon, theme):
         try:
             score = int(score)
@@ -331,7 +368,7 @@ def render_gauge_card(scores):
             <div style="margin-top: 12px; text-align: center;"><div style="font-size: 20px;">{icon}</div><div style="font-size: 11px; font-weight: 600; color: #64748b;">{safe_text(label)}</div></div>
         </div>"""
     
-    st.markdown(f"""<div style="background: white; padding: 28px 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
+    st.markdown(f"""<div style="background: white; padding: 24px 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 12px;">
         <div style="display: flex; justify-content: space-around; align-items: flex-end;">
             {gauge("平静度", scores.get("平静度", 0), "🕊️", "peace")}
             {gauge("觉察度", scores.get("觉察度", 0), "👁️", "awareness")}
@@ -340,24 +377,19 @@ def render_gauge_card(scores):
     </div>""", unsafe_allow_html=True)
 
 def render_insights(insights, recommendation, risk_alert, scores):
-    """渲染洞察和行动指南（上下两行布局）"""
-    # 安全处理 insights
+    """渲染洞察和行动指南"""
     safe_insights = []
     if isinstance(insights, list):
         for i in insights:
             safe_insights.append(safe_text(i))
     
-    items = "".join([f'<li style="margin-bottom: 8px; color: #581c87; font-size: 14px; line-height: 1.5;">• {i}</li>' for i in safe_insights])
+    items = "".join([f'<li style="margin-bottom: 6px; color: #581c87; font-size: 14px; line-height: 1.5;">• {i}</li>' for i in safe_insights])
     
-    # 判断是否需要显示风险提示
     show_risk = should_show_risk_alert(scores, risk_alert)
     
-    # 根据是否有风险提示决定行动指南内容
     if not show_risk:
-        # 正常情况：显示身心灵调适建议
         action_content = f'<p style="margin: 0; color: #166534; font-size: 14px; line-height: 1.6;">{safe_text(recommendation)}</p>'
     else:
-        # 风险情况：显示风险提示
         action_content = f'''<div style="background: #fffbeb; padding: 12px 16px; border-radius: 10px; border: 1px solid #fde68a;">
             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
                 <span style="font-size: 14px;">⚠️</span>
@@ -366,14 +398,13 @@ def render_insights(insights, recommendation, risk_alert, scores):
             <p style="margin: 0; color: #292524; font-size: 14px; line-height: 1.6;">{safe_text(risk_alert)}</p>
         </div>'''
     
-    # 上下两行布局
-    st.markdown(f"""<div style="background: #faf5ff; padding: 20px; border-radius: 16px; border: 1px solid #e9d5ff; margin-bottom: 12px;">
-        <h4 style="margin: 0 0 12px; font-size: 14px; color: #7c3aed;">💡 深度洞察</h4>
+    st.markdown(f"""<div style="background: #faf5ff; padding: 16px; border-radius: 16px; border: 1px solid #e9d5ff; margin-bottom: 10px;">
+        <h4 style="margin: 0 0 10px; font-size: 14px; color: #7c3aed;">💡 深度洞察</h4>
         <ul style="margin: 0; padding: 0; list-style: none;">{items}</ul>
     </div>""", unsafe_allow_html=True)
     
-    st.markdown(f"""<div style="background: #f0fdf4; padding: 20px; border-radius: 16px; border: 1px solid #bbf7d0; margin-bottom: 16px;">
-        <h4 style="margin: 0 0 12px; font-size: 14px; color: #16a34a;">❤️ 行动指南</h4>
+    st.markdown(f"""<div style="background: #f0fdf4; padding: 16px; border-radius: 16px; border: 1px solid #bbf7d0; margin-bottom: 12px;">
+        <h4 style="margin: 0 0 10px; font-size: 14px; color: #16a34a;">❤️ 行动指南</h4>
         {action_content}
     </div>""", unsafe_allow_html=True)
 
@@ -386,6 +417,7 @@ def parse_to_beijing(t_str):
     except: return datetime.datetime.now()
 
 def render_trend(data_list):
+    """渲染情绪波动图 - 去掉框，压缩高度，更平滑曲线"""
     now = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
     today_str, start_dt, end_dt = now.strftime('%Y-%m-%d'), now.replace(hour=0, minute=0, second=0), now.replace(hour=23, minute=59, second=59)
     
@@ -398,21 +430,27 @@ def render_trend(data_list):
                 df_list.append({"Time": dt, "Score": res['scores'].get('平静度', 0)})
         except: continue
     
-    st.markdown("""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
+    # 去掉框，压缩标题行高度
+    st.markdown("""<div style="padding: 8px 0 4px 0;">
         <span style="font-size: 14px; font-weight: 600; color: #334155;">🌊 情绪波动 (近24小时)</span>
     </div>""", unsafe_allow_html=True)
     
     df = pd.DataFrame(df_list) if df_list else pd.DataFrame({'Time': [start_dt, end_dt], 'Score': [0, 0]})
-    chart = alt.Chart(df).mark_area(interpolate='monotone', line={'color': '#0d9488', 'strokeWidth': 2},
+    
+    # 使用 basis 插值让曲线更平滑
+    chart = alt.Chart(df).mark_area(
+        interpolate='basis',
+        line={'color': '#0d9488', 'strokeWidth': 2},
         color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color='rgba(20,184,166,0.3)', offset=0), alt.GradientStop(color='rgba(20,184,166,0)', offset=1)], x1=1, x2=1, y1=1, y2=0)
     ).encode(
         x=alt.X('Time:T', scale=alt.Scale(domain=[start_dt, end_dt]), axis=alt.Axis(format='%H:%M', title='')),
         y=alt.Y('Score:Q', scale=alt.Scale(domain=[-5, 5]), axis=alt.Axis(title='', values=[-5, 0, 5])),
         opacity=alt.value(1 if df_list else 0)
-    ).properties(height=140).configure_view(strokeWidth=0)
+    ).properties(height=120).configure_view(strokeWidth=0)
     st.altair_chart(chart, use_container_width=True)
 
 def render_focus_map(data_list):
+    """渲染注意力地图 - 去掉框，压缩高度"""
     now = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
     today_str, start_dt, end_dt = now.strftime('%Y-%m-%d'), now.replace(hour=0, minute=0, second=0), now.replace(hour=23, minute=59, second=59)
     
@@ -428,11 +466,10 @@ def render_focus_map(data_list):
                 points.append({"Time": dt, "Y": y_map.get(focus.get('time_orientation', 'Present'), 2), "Color": color})
         except: continue
     
-    st.markdown("""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
-            <span style="font-size: 14px; font-weight: 600; color: #334155;">🗺️ 注意力地图</span>
-            <span style="font-size: 11px; color: #64748b;"><span style="color: #8b5cf6;">●</span> 内在 <span style="color: #f97316;">●</span> 外在</span>
-        </div>
+    # 去掉框，压缩标题行高度
+    st.markdown("""<div style="padding: 8px 0 4px 0; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 14px; font-weight: 600; color: #334155;">🗺️ 注意力地图</span>
+        <span style="font-size: 11px; color: #64748b;"><span style="color: #8b5cf6;">●</span> 内在 <span style="color: #f97316;">●</span> 外在</span>
     </div>""", unsafe_allow_html=True)
     
     df = pd.DataFrame(points) if points else pd.DataFrame({'Time': [start_dt], 'Y': [2], 'Color': ['#fff']})
@@ -440,11 +477,11 @@ def render_focus_map(data_list):
         x=alt.X('Time:T', scale=alt.Scale(domain=[start_dt, end_dt]), axis=alt.Axis(format='%H:%M', title='')),
         y=alt.Y('Y:Q', scale=alt.Scale(domain=[0.5, 3.5]), axis=alt.Axis(title='', labelExpr="datum.value==1?'Past':datum.value==2?'Present':'Future'", values=[1,2,3])),
         color=alt.Color('Color:N', scale=None)
-    ).properties(height=180).configure_view(strokeWidth=0)
+    ).properties(height=150).configure_view(strokeWidth=0)
     st.altair_chart(chart, use_container_width=True)
 
-# ================= 9. 登录页面 =================
-def render_login():
+# ================= 10. 登录页面 =================
+def render_login(cookie_manager):
     st.markdown("""<div style="text-align: center; margin-top: 60px;">
         <div style="background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 16px; border-radius: 16px; display: inline-block; margin-bottom: 20px; font-size: 32px;">🧠</div>
         <h1 style="font-size: 28px; font-weight: 700; color: #1e293b;">MindfulFocus AI</h1>
@@ -460,6 +497,10 @@ def render_login():
                 if username and password:
                     ok, msg, user = verify_login(username, password)
                     if ok:
+                        # 登录成功后设置Cookie
+                        token = generate_auth_token(username, user['daily_limit'])
+                        cookie_manager.set("auth_token", token, expires_at=datetime.datetime.now() + datetime.timedelta(days=7))
+                        
                         st.session_state.logged_in = True
                         st.session_state.username = username
                         st.session_state.daily_limit = user['daily_limit']
@@ -469,14 +510,30 @@ def render_login():
                 else:
                     st.warning("请输入用户名和密码")
 
-# ================= 10. 主程序 =================
+# ================= 11. 主程序 =================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
+if "is_analyzing" not in st.session_state:
+    st.session_state.is_analyzing = False
+
 api_key = st.secrets.get("OPENAI_API_KEY", "")
 
+# 初始化Cookie管理器
+cookie_manager = get_cookie_manager()
+
+# 尝试从Cookie自动登录
 if not st.session_state.logged_in:
-    render_login()
+    auth_token = cookie_manager.get("auth_token")
+    if auth_token:
+        user_info = verify_auth_token(auth_token)
+        if user_info:
+            st.session_state.logged_in = True
+            st.session_state.username = user_info["username"]
+            st.session_state.daily_limit = user_info["daily_limit"]
+
+if not st.session_state.logged_in:
+    render_login(cookie_manager)
 else:
     username = st.session_state.username
     daily_limit = st.session_state.daily_limit
@@ -484,11 +541,10 @@ else:
     render_header(username, daily_limit)
     history = get_history(username)
     
-    # 【修改2】tab名称：觉察记录 → 情绪资产记录
     tab1, tab2 = st.tabs(["✨ 情绪资产记录", "🗺️ 注意力地图"])
     
     with tab1:
-        # 【修改4】情绪波动图移到首页最顶部
+        # 情绪波动图在最顶部
         render_trend(history)
         
         if history:
@@ -500,7 +556,6 @@ else:
                     latest = {}
             
             scores = latest.get('scores', {})
-            # 【修改1】不再传递summary参数，UI不显示但LLM输出保留
             render_gauge_card(scores)
             render_insights(
                 latest.get('key_insights', []), 
@@ -509,32 +564,48 @@ else:
                 scores
             )
         
-        st.markdown("""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
-            <label style="font-size: 14px; font-weight: 600; color: #334155;">此刻你的感受如何？</label>
+        # 去掉引导语卡片，保留文字
+        st.markdown("""<div style="padding: 8px 0 4px 0;">
+            <span style="font-size: 14px; font-weight: 600; color: #334155;">此刻你的感受如何？</span>
         </div>""", unsafe_allow_html=True)
         
         user_input = st.text_area("", height=120, placeholder="描述此刻的身体感受、念头或所处情境...", label_visibility="collapsed")
         
         has_quota, remaining, used = check_quota(username, daily_limit)
         
-        # 【修改3】按钮文案：铸造情绪资产 → 提交
-        if st.button("提交", disabled=not has_quota):
-            if not user_input:
-                st.warning("请先输入内容")
-            elif not api_key:
-                st.error("API Key 未配置")
+        # 按钮和加载状态
+        col_btn, col_status = st.columns([1, 2])
+        
+        with col_btn:
+            is_disabled = not has_quota or st.session_state.is_analyzing
+            if st.button("提交", disabled=is_disabled, use_container_width=True):
+                if not user_input:
+                    st.warning("请先输入内容")
+                elif not api_key:
+                    st.error("API Key 未配置")
+                else:
+                    st.session_state.is_analyzing = True
+                    st.rerun()
+        
+        with col_status:
+            if st.session_state.is_analyzing:
+                st.markdown("""<div style="display: flex; align-items: center; height: 52px; padding-left: 12px;">
+                    <span style="font-size: 14px; color: #0d9488;">🧠 AI分析中...</span>
+                </div>""", unsafe_allow_html=True)
+        
+        # 执行分析
+        if st.session_state.is_analyzing and user_input:
+            result = analyze_emotion(user_input, api_key)
+            if "error" not in result:
+                result['date'] = datetime.date.today().isoformat()
+                save_to_db(username, user_input, result)
+                increment_usage(username)
+                st.session_state.is_analyzing = False
+                st.toast("✅ 提交成功！")
+                st.rerun()
             else:
-                with st.spinner("🧠 AI 分析中..."):
-                    result = analyze_emotion(user_input, api_key)
-                    if "error" not in result:
-                        # 系统拼接日期，确保准确
-                        result['date'] = datetime.date.today().isoformat()
-                        save_to_db(username, user_input, result)
-                        increment_usage(username)
-                        st.toast("✅ 提交成功！")
-                        st.rerun()
-                    else:
-                        st.error(f"分析失败: {result['error']}")
+                st.session_state.is_analyzing = False
+                st.error(f"分析失败: {result['error']}")
         
         if not has_quota:
             st.warning(f"⚠️ 今日配额已用完 ({daily_limit}/{daily_limit})")
@@ -556,14 +627,14 @@ else:
             time_labels = {"Past": "过去", "Present": "当下", "Future": "未来"}
             target_labels = {"Internal": "内在感受", "External": "外在事件"}
             
-            st.markdown(f"""<div style="background: white; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; margin-top: 16px;">
-                <h4 style="margin: 0 0 16px; font-size: 15px; color: #334155;">🎯 最近一次注意力焦点</h4>
+            st.markdown(f"""<div style="background: white; padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-top: 12px;">
+                <h4 style="margin: 0 0 12px; font-size: 15px; color: #334155;">🎯 最近一次注意力焦点</h4>
                 <div style="display: flex; gap: 12px;">
-                    <div style="flex: 1; padding: 16px; background: #f0fdf4; border-radius: 12px; text-align: center;">
+                    <div style="flex: 1; padding: 14px; background: #f0fdf4; border-radius: 12px; text-align: center;">
                         <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">时间维度</div>
                         <div style="font-size: 18px; font-weight: 600; color: #16a34a;">{time_labels.get(time_ori, time_ori)}</div>
                     </div>
-                    <div style="flex: 1; padding: 16px; background: #faf5ff; border-radius: 12px; text-align: center;">
+                    <div style="flex: 1; padding: 14px; background: #faf5ff; border-radius: 12px; text-align: center;">
                         <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">关注对象</div>
                         <div style="font-size: 18px; font-weight: 600; color: #7c3aed;">{target_labels.get(target, target)}</div>
                     </div>
