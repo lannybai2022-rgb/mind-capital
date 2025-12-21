@@ -3,3 +3,4 @@ openai
 pandas
 altair
 supabase
+extra-streamlit-components
