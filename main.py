@@ -112,7 +112,7 @@ st.markdown("""
 html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
 .block-container { padding-top: 1rem; max-width: 800px; }
 .stTextArea textarea { font-size: 16px !important; border-radius: 12px !important; border: 1px solid #e2e8f0 !important; background: #f8fafc !important; }
-.stButton > button { border-radius: 12px !important; height: 52px !important; font-weight: 600 !important; background: linear-gradient(135deg, #14b8a6 0%, #10b981 100%) !important; border: none !important; color: white !important; }
+.stButton > button { border-radius: 12px !important; height: 44px !important; font-weight: 600 !important; background: linear-gradient(135deg, #14b8a6 0%, #10b981 100%) !important; border: none !important; color: white !important; padding: 0 24px !important; }
 .stButton > button:disabled { background: #cbd5e1 !important; color: #94a3b8 !important; }
 .stTabs [data-baseweb="tab-list"] { gap: 8px; background: white; padding: 6px; border-radius: 14px; border: 1px solid #e2e8f0; }
 .stTabs [data-baseweb="tab"] { border-radius: 10px; padding: 10px 20px; font-weight: 500; }
@@ -325,18 +325,18 @@ def render_header(username, daily_limit):
     color = "#10b981" if remaining > 10 else "#f59e0b" if remaining > 3 else "#ef4444"
     
     st.markdown(f"""
-    <div style="background: white; border-bottom: 1px solid #e2e8f0; padding: 12px 20px; margin: -6rem -1rem 1rem -1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <div style="background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%); color: white; padding: 8px; border-radius: 10px; font-size: 20px;">🧠</div>
-            <span style="font-weight: 700; font-size: 18px; color: #1e293b;">MindfulFocus AI</span>
+    <div style="background: white; border-bottom: 1px solid #e2e8f0; padding: 12px 16px; margin: -1rem -1rem 1rem -1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%); color: white; padding: 6px; border-radius: 8px; font-size: 16px;">🧠</div>
+            <span style="font-weight: 700; font-size: 15px; color: #1e293b;">MindfulFocus AI</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 16px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
             <div style="text-align: right;">
-                <div style="font-size: 11px; color: #64748b;">今日剩余</div>
-                <div style="font-size: 14px; font-weight: 600; color: {color};">{remaining}/{daily_limit}</div>
+                <div style="font-size: 10px; color: #64748b;">今日剩余</div>
+                <div style="font-size: 13px; font-weight: 600; color: {color};">{remaining}/{daily_limit}</div>
             </div>
-            <div style="background: #f1f5f9; padding: 6px 12px; border-radius: 20px;">
-                <span style="font-size: 13px; font-weight: 500; color: #475569;">👤 {safe_text(username)}</span>
+            <div style="background: #f1f5f9; padding: 4px 10px; border-radius: 16px;">
+                <span style="font-size: 12px; font-weight: 500; color: #475569;">👤 {safe_text(username)}</span>
             </div>
         </div>
     </div>
@@ -355,23 +355,26 @@ def render_gauge_card(scores):
         colors = {"peace": ("#11998e", "#38ef7d", "#0d9488"), "awareness": ("#8E2DE2", "#4A00E0", "#7c3aed"), "energy": ("#f97316", "#fbbf24", "#ea580c")}
         c = colors.get(theme)
         badge = f"+{score}" if score > 0 else str(score)
-        return f"""<div style="display: flex; flex-direction: column; align-items: center; width: 100px;">
+        return f"""<div style="display: flex; flex-direction: column; align-items: center; width: 90px;">
             <div style="display: flex; align-items: center; gap: 4px;">
-                <div style="position: relative; height: 140px; width: 44px; background: #f1f5f9; border-radius: 22px; overflow: hidden; border: 1px solid #e2e8f0;">
+                <div style="position: relative; height: 130px; width: 40px; background: #f1f5f9; border-radius: 20px; overflow: hidden; border: 1px solid #e2e8f0;">
                     <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); opacity: 0.85;"></div>
-                    <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: white; color: {c[2]}; font-weight: 700; font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 2px solid {c[2]}; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">{badge}</div>
+                    <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: white; color: {c[2]}; font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 2px solid {c[2]}; box-shadow: 0 2px 6px rgba(0,0,0,0.1);">{badge}</div>
                 </div>
-                <div style="display: flex; flex-direction: column; justify-content: space-between; height: 140px; padding: 4px 0;">
+                <div style="display: flex; flex-direction: column; justify-content: space-between; height: 130px; padding: 4px 0;">
                     <span style="font-size: 9px; color: #94a3b8;">+5</span>
                     <span style="font-size: 9px; color: #94a3b8;">0</span>
                     <span style="font-size: 9px; color: #94a3b8;">-5</span>
                 </div>
             </div>
-            <div style="margin-top: 12px; text-align: center;"><div style="font-size: 20px;">{icon}</div><div style="font-size: 11px; font-weight: 600; color: #64748b;">{safe_text(label)}</div></div>
+            <div style="margin-top: 10px; text-align: center; width: 100%;">
+                <div style="font-size: 14px; line-height: 1;">{icon}</div>
+                <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 4px;">{safe_text(label)}</div>
+            </div>
         </div>"""
     
-    st.markdown(f"""<div style="background: white; padding: 24px 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 12px;">
-        <div style="display: flex; justify-content: space-around; align-items: flex-end;">
+    st.markdown(f"""<div style="background: white; padding: 20px 16px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-around; align-items: flex-start;">
             {gauge("平静度", scores.get("平静度", 0), "🕊️", "peace")}
             {gauge("觉察度", scores.get("觉察度", 0), "👁️", "awareness")}
             {gauge("能量值", scores.get("能量水平", 0), "🔋", "energy")}
@@ -575,25 +578,31 @@ else:
         
         has_quota, remaining, used = check_quota(username, daily_limit)
         
-        # 按钮和加载状态
-        col_btn, col_status = st.columns([1, 2])
+        # 按钮和加载状态 - 使用HTML实现同行布局
+        is_disabled = not has_quota or st.session_state.is_analyzing
         
-        with col_btn:
-            is_disabled = not has_quota or st.session_state.is_analyzing
-            if st.button("提交", disabled=is_disabled, use_container_width=True):
-                if not user_input:
-                    st.warning("请先输入内容")
-                elif not api_key:
-                    st.error("API Key 未配置")
-                else:
-                    st.session_state.is_analyzing = True
-                    st.rerun()
+        # 显示加载状态文字
+        status_text = ""
+        if st.session_state.is_analyzing:
+            status_text = "🧠 AI分析中..."
         
-        with col_status:
-            if st.session_state.is_analyzing:
-                st.markdown("""<div style="display: flex; align-items: center; height: 52px; padding-left: 12px;">
-                    <span style="font-size: 14px; color: #0d9488;">🧠 AI分析中...</span>
-                </div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+            <div style="flex: 0 0 auto;">
+        </div>""", unsafe_allow_html=True)
+        
+        if st.button("提交", disabled=is_disabled):
+            if not user_input:
+                st.warning("请先输入内容")
+            elif not api_key:
+                st.error("API Key 未配置")
+            else:
+                st.session_state.is_analyzing = True
+                st.rerun()
+        
+        if status_text:
+            st.markdown(f"""<div style="margin-top: -45px; margin-left: 90px; height: 40px; display: flex; align-items: center;">
+                <span style="font-size: 14px; color: #0d9488;">{status_text}</span>
+            </div>""", unsafe_allow_html=True)
         
         # 执行分析
         if st.session_state.is_analyzing and user_input:
@@ -603,7 +612,7 @@ else:
                 save_to_db(username, user_input, result)
                 increment_usage(username)
                 st.session_state.is_analyzing = False
-                st.toast("✅ 提交成功！")
+                st.toast("✅ 分析完成！")
                 st.rerun()
             else:
                 st.session_state.is_analyzing = False
