@@ -303,7 +303,8 @@ def render_header(username, daily_limit):
     </div>
     """, unsafe_allow_html=True)
 
-def render_gauge_card(scores, summary=""):
+def render_gauge_card(scores):
+    """渲染温度计卡片 - 已移除summary显示"""
     def gauge(label, score, icon, theme):
         try:
             score = int(score)
@@ -330,14 +331,12 @@ def render_gauge_card(scores, summary=""):
             <div style="margin-top: 12px; text-align: center;"><div style="font-size: 20px;">{icon}</div><div style="font-size: 11px; font-weight: 600; color: #64748b;">{safe_text(label)}</div></div>
         </div>"""
     
-    summary_html = f'<div style="text-align: center; margin-top: 20px;"><p style="margin: 0; color: #a1a1aa; font-size: 12px;">{safe_text(summary)}</p></div>' if summary else ""
-    
     st.markdown(f"""<div style="background: white; padding: 28px 20px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
         <div style="display: flex; justify-content: space-around; align-items: flex-end;">
             {gauge("平静度", scores.get("平静度", 0), "🕊️", "peace")}
             {gauge("觉察度", scores.get("觉察度", 0), "👁️", "awareness")}
             {gauge("能量值", scores.get("能量水平", 0), "🔋", "energy")}
-        </div>{summary_html}
+        </div>
     </div>""", unsafe_allow_html=True)
 
 def render_insights(insights, recommendation, risk_alert, scores):
@@ -485,9 +484,13 @@ else:
     render_header(username, daily_limit)
     history = get_history(username)
     
-    tab1, tab2 = st.tabs(["✨ 觉察记录", "🗺️ 注意力地图"])
+    # 【修改2】tab名称：觉察记录 → 情绪资产记录
+    tab1, tab2 = st.tabs(["✨ 情绪资产记录", "🗺️ 注意力地图"])
     
     with tab1:
+        # 【修改4】情绪波动图移到首页最顶部
+        render_trend(history)
+        
         if history:
             latest = history[0]['ai_result']
             if isinstance(latest, str): 
@@ -497,7 +500,8 @@ else:
                     latest = {}
             
             scores = latest.get('scores', {})
-            render_gauge_card(scores, latest.get('summary', ''))
+            # 【修改1】不再传递summary参数，UI不显示但LLM输出保留
+            render_gauge_card(scores)
             render_insights(
                 latest.get('key_insights', []), 
                 get_recommendation(latest),
@@ -513,7 +517,8 @@ else:
         
         has_quota, remaining, used = check_quota(username, daily_limit)
         
-        if st.button("⚡ 铸造情绪资产", disabled=not has_quota):
+        # 【修改3】按钮文案：铸造情绪资产 → 提交
+        if st.button("提交", disabled=not has_quota):
             if not user_input:
                 st.warning("请先输入内容")
             elif not api_key:
@@ -526,7 +531,7 @@ else:
                         result['date'] = datetime.date.today().isoformat()
                         save_to_db(username, user_input, result)
                         increment_usage(username)
-                        st.toast("✅ 铸造成功！")
+                        st.toast("✅ 提交成功！")
                         st.rerun()
                     else:
                         st.error(f"分析失败: {result['error']}")
@@ -535,7 +540,6 @@ else:
             st.warning(f"⚠️ 今日配额已用完 ({daily_limit}/{daily_limit})")
     
     with tab2:
-        render_trend(history)
         render_focus_map(history)
         
         if history:
@@ -566,4 +570,4 @@ else:
                 </div>
             </div>""", unsafe_allow_html=True)
         else:
-            st.info("暂无数据，请先在「觉察记录」页面记录。")
+            st.info("暂无数据，请先在「情绪资产记录」页面记录。")
