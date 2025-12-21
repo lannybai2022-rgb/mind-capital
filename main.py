@@ -58,6 +58,13 @@ STRICT_SYSTEM_PROMPT = """
 | +4 | 活力满满, 干劲十足 |
 | +5 | 精力过剩 |
 
+【任务要求】
+1. 分析与评分：仔细阅读输入文本，根据【情绪标签体系与评分标准】对用户的情绪状态进行量化评分（-5到+5）。
+2. 洞察与建议：贴合用户情境，提取核心情绪模式，可引用用户原话进行解读；并提供一条具体可操作的身心灵调适建议。
+3. 风险提示：仅当用户情绪处于较激烈状态（平静度≤-3）时，温和提醒"暂缓重大决策"，并给出一个身体层面的刹车动作。
+4. 注意力侦测：判断用户的注意力焦点在时空坐标系中的位置。
+5. 输出格式：必须严格以JSON格式输出，不包含任何额外解释性文字。
+
 【注意力焦点侦测】
 分析用户当下的念头处于"时空坐标系"的哪个位置：
 
@@ -70,33 +77,6 @@ STRICT_SYSTEM_PROMPT = """
    - "Internal": 关注自我感受、身体、想法
    - "External": 关注他人、环境、任务、客观事件
 
-【风控层】
-目标：识别"冲动外溢风险"，给出可立即执行的"行为刹车"建议。
-
-风险等级判定：
-| 等级 | 触发条件 |
-| High | 自伤/他伤表述、明确暴力威胁、"现在就去做"的冲动冲刺 |
-| Medium | 人身攻击/侮辱（如傻X、垃圾）、报复暗示、"忍不了"但未行动 |
-| Low | 无上述信号 |
-
-输出字段：
-- risk_level：Low / Medium / High
-- risk_reason：一句话说明风险原因（≤25字，Low时留空）
-- brake_action：身体层面的刹车建议（≤35字，Low时留空）
-  示例：「离开当前环境走动2分钟」「把手机放下，看向窗外」「用力攥拳再松开5次」「去接一杯水慢慢喝完」
-
-注意：若出现自伤/他伤表述，risk_level必须为High，brake_action必须包含"停止当前行为"的指引。
-
-【任务要求】
-1. 分析与评分：仔细阅读输入文本，根据【情绪标签体系与评分标准】对用户的情绪状态进行量化评分（-5到+5）。
-2. 注意力侦测：判断用户的注意力焦点在时空坐标系中的位置。
-3. 洞察：提取核心情绪模式，输出2条洞察（避免空话，直接输出内容，不要带"问题面/资源面"等标签）：
-   - 第1条：指向触发因素/循环模式/代价
-   - 第2条：指向用户做对了什么/已有的觉察/潜在力量
-4. 风控层：根据文本内容识别冲动外溢风险，输出risk_control对象。
-5. 建议：给出一条action_guide（≤50字，低风险偏行动指引，能量低偏恢复建议）。
-6. 输出格式：必须严格以JSON格式输出，不包含任何额外解释性文字。
-
 【JSON输出格式】
 {
   "summary": "不超过30字",
@@ -105,21 +85,17 @@ STRICT_SYSTEM_PROMPT = """
     "觉察度": 0,
     "能量水平": 0
   },
+  "key_insights": [
+    "洞察点1",
+    "洞察点2"
+  ],
+  "recommendations": {
+    "身心灵调适建议": "不超过50字"
+  },
+  "risk_alert": "仅在平静度≤-3时输出提示和刹车动作，否则为null",
   "focus_analysis": {
     "time_orientation": "Past/Present/Future",
     "focus_target": "Internal/External"
-  },
-  "key_insights": [
-    "洞察1内容",
-    "洞察2内容"
-  ],
-  "risk_control": {
-    "risk_level": "Low",
-    "risk_reason": "",
-    "brake_action": ""
-  },
-  "recommendations": {
-    "action_guide": "不超过50字"
   }
 }
 """
@@ -279,23 +255,29 @@ def safe_text(text):
     text = re.sub(r'&lt;[^&]*&gt;', '', text)
     return text.strip()
 
-def calc_risk_level(scores, ai_risk_level):
-    """分数兜底：如果分数很低，自动升级风险等级"""
+def get_recommendation(result):
+    """兼容新旧两种字段名"""
+    recs = result.get('recommendations', {})
+    # 优先读取新字段名
+    if '身心灵调适建议' in recs:
+        return recs['身心灵调适建议']
+    # 兼容旧字段名
+    if 'action_guide' in recs:
+        return recs['action_guide']
+    return ''
+
+def should_show_risk_alert(scores, risk_alert):
+    """判断是否需要显示风险提示"""
     peace = scores.get('平静度', 0)
-    energy = scores.get('能量水平', 0)
-    
     try:
         peace = int(peace)
-        energy = int(energy)
     except:
-        peace, energy = 0, 0
+        peace = 0
     
-    # 分数兜底逻辑
-    if peace <= -4 or energy <= -4:
-        if ai_risk_level == "Low":
-            return "Medium"
-    
-    return ai_risk_level
+    # 平静度≤-3 且 risk_alert 有内容时显示
+    if peace <= -3 and risk_alert and risk_alert != "null" and risk_alert.lower() != "null":
+        return True
+    return False
 
 # ================= 8. UI 组件 =================
 def render_header(username, daily_limit):
@@ -358,7 +340,7 @@ def render_gauge_card(scores, summary=""):
         </div>{summary_html}
     </div>""", unsafe_allow_html=True)
 
-def render_insights(insights, action_guide, risk_control, scores):
+def render_insights(insights, recommendation, risk_alert, scores):
     """渲染洞察和行动指南（上下两行布局）"""
     # 安全处理 insights
     safe_insights = []
@@ -368,42 +350,22 @@ def render_insights(insights, action_guide, risk_control, scores):
     
     items = "".join([f'<li style="margin-bottom: 8px; color: #581c87; font-size: 14px; line-height: 1.5;">• {i}</li>' for i in safe_insights])
     
-    # 获取风险等级（含分数兜底）
-    ai_risk_level = "Low"
-    risk_reason = ""
-    brake_action = ""
+    # 判断是否需要显示风险提示
+    show_risk = should_show_risk_alert(scores, risk_alert)
     
-    if isinstance(risk_control, dict):
-        ai_risk_level = risk_control.get('risk_level', 'Low')
-        risk_reason = safe_text(risk_control.get('risk_reason', ''))
-        brake_action = safe_text(risk_control.get('brake_action', ''))
-    
-    # 分数兜底
-    final_risk_level = calc_risk_level(scores, ai_risk_level)
-    
-    # 根据风险等级决定行动指南内容
-    if final_risk_level == "Low":
-        action_content = f'<p style="margin: 0; color: #166534; font-size: 14px; line-height: 1.6;">{safe_text(action_guide)}</p>'
+    # 根据是否有风险提示决定行动指南内容
+    if not show_risk:
+        # 正常情况：显示身心灵调适建议
+        action_content = f'<p style="margin: 0; color: #166534; font-size: 14px; line-height: 1.6;">{safe_text(recommendation)}</p>'
     else:
-        if final_risk_level == "High":
-            level_color = "#ef4444"
-            level_bg = "#fef2f2"
-            level_border = "#fecaca"
-            level_icon = "🚨"
-            level_text = "高风险"
-        else:
-            level_color = "#f59e0b"
-            level_bg = "#fffbeb"
-            level_border = "#fde68a"
-            level_icon = "⚠️"
-            level_text = "中风险"
-        
-        if not brake_action:
-            brake_action = "离开当前环境走动2分钟，或去接一杯水慢慢喝完"
-        if not risk_reason and final_risk_level != ai_risk_level:
-            risk_reason = "检测到情绪状态较低"
-        
-        action_content = f'<div style="background: {level_bg}; padding: 12px 16px; border-radius: 10px; border: 1px solid {level_border};"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;"><span style="font-size: 14px;">{level_icon}</span><span style="font-size: 13px; font-weight: 600; color: {level_color};">{level_text}</span></div><p style="margin: 0 0 8px; color: #78716c; font-size: 12px;">{risk_reason}</p><p style="margin: 0; color: #292524; font-size: 14px; font-weight: 500;">🛑 {brake_action}</p></div>'
+        # 风险情况：显示风险提示
+        action_content = f'''<div style="background: #fffbeb; padding: 12px 16px; border-radius: 10px; border: 1px solid #fde68a;">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+                <span style="font-size: 14px;">⚠️</span>
+                <span style="font-size: 13px; font-weight: 600; color: #f59e0b;">温馨提示</span>
+            </div>
+            <p style="margin: 0; color: #292524; font-size: 14px; line-height: 1.6;">{safe_text(risk_alert)}</p>
+        </div>'''
     
     # 上下两行布局
     st.markdown(f"""<div style="background: #faf5ff; padding: 20px; border-radius: 16px; border: 1px solid #e9d5ff; margin-bottom: 12px;">
@@ -538,8 +500,8 @@ else:
             render_gauge_card(scores, latest.get('summary', ''))
             render_insights(
                 latest.get('key_insights', []), 
-                latest.get('recommendations', {}).get('action_guide', ''),
-                latest.get('risk_control', {}),
+                get_recommendation(latest),
+                latest.get('risk_alert'),
                 scores
             )
         
