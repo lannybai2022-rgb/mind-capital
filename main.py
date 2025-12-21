@@ -126,9 +126,11 @@ button[kind="headerNoPadding"] { display: none !important; }
 """, unsafe_allow_html=True)
 
 # ================= 3. Cookie 管理 =================
-@st.cache_resource
 def get_cookie_manager():
-    return stx.CookieManager()
+    """获取Cookie管理器（不使用缓存装饰器）"""
+    if 'cookie_manager' not in st.session_state:
+        st.session_state.cookie_manager = stx.CookieManager()
+    return st.session_state.cookie_manager
 
 def get_secret_key():
     """获取加密密钥"""
