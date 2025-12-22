@@ -13,7 +13,7 @@ import base64
 # ================= 1. 核心 Prompt =================
 STRICT_SYSTEM_PROMPT = """
 【角色设定】
-你是一位结合了身心灵修行理论、实修和数据分析的"情绪资产管理专家"。你的任务是接收用户输入的非结构化情绪记录，将其转化为结构化的情绪资产数据，并提供专业的管理建议。
+你是一位结合了身心灵修行理论、实修和数据分析的"情绪资产管理专家"。你的任务是接收用户输入的非结构化情绪日记，并将其转化为结构化的情绪资产数据，并提供专业的管理建议。
 
 【情绪标签体系与评分标准】
 请严格基于以下3个维度进行量化分析（分数范围：-5到+5）。你必须参考下表中的描述来判断分数：
@@ -62,7 +62,7 @@ STRICT_SYSTEM_PROMPT = """
 
 【任务要求】
 1. 分析与评分：仔细阅读输入文本，根据【情绪标签体系与评分标准】对用户的情绪状态进行量化评分（-5到+5）。
-2. 洞察与建议：贴合用户情境，提取核心情绪模式，提供一条具体可操作的身心灵调适建议。
+2. 洞察与建议：贴合用户情境，提取核心情绪模式，可引用用户原话进行解读；并提供一条具体可操作的身心灵调适建议。
 3. 风险提示：仅当用户情绪处于较激烈状态（平静度≤-3）时，温和提醒"暂缓重大决策"，并给出一个身体层面的刹车动作。
 4. 注意力侦测：判断用户的注意力焦点在时空坐标系中的位置。
 5. 输出格式：必须严格以JSON格式输出，不包含任何额外解释性文字。
@@ -379,14 +379,16 @@ def render_gauge_card(scores):
         score = max(-5, min(5, score))
         
         percent = (score + 5) * 10
+        # 限制小方块位置，避免超出边界
+        badge_bottom = min(max(percent, 8), 92)
         colors = {"peace": ("#11998e", "#38ef7d", "#0d9488"), "awareness": ("#8E2DE2", "#4A00E0", "#7c3aed"), "energy": ("#f97316", "#fbbf24", "#ea580c")}
         c = colors.get(theme)
         badge = f"+{score}" if score > 0 else str(score)
         return f"""<div style="display: flex; flex-direction: column; align-items: center; width: 90px;">
             <div style="display: flex; align-items: center; gap: 4px;">
-                <div style="position: relative; height: 130px; width: 40px; background: #f1f5f9; border-radius: 20px; overflow: hidden; border: 1px solid #e2e8f0;">
-                    <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); opacity: 0.85;"></div>
-                    <div style="position: absolute; bottom: {percent}%; left: 50%; transform: translate(-50%, 50%); background: white; color: {c[2]}; font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 2px solid {c[2]}; box-shadow: 0 2px 6px rgba(0,0,0,0.1);">{badge}</div>
+                <div style="position: relative; height: 130px; width: 40px; background: #f1f5f9; border-radius: 20px; overflow: visible; border: 1px solid #e2e8f0;">
+                    <div style="position: absolute; bottom: 0; width: 100%; height: {percent}%; background: linear-gradient(to top, {c[0]}, {c[1]}); opacity: 0.85; border-radius: 0 0 20px 20px;"></div>
+                    <div style="position: absolute; bottom: {badge_bottom}%; left: 50%; transform: translate(-50%, 50%); background: white; color: {c[2]}; font-weight: 700; font-size: 10px; padding: 2px 6px; border-radius: 5px; border: 2px solid {c[2]}; box-shadow: 0 2px 6px rgba(0,0,0,0.1); white-space: nowrap;">{badge}</div>
                 </div>
                 <div style="display: flex; flex-direction: column; justify-content: space-between; height: 130px; padding: 4px 0;">
                     <span style="font-size: 9px; color: #94a3b8;">+5</span>
@@ -394,7 +396,7 @@ def render_gauge_card(scores):
                     <span style="font-size: 9px; color: #94a3b8;">-5</span>
                 </div>
             </div>
-            <div style="margin-top: 10px; text-align: center; width: 100%;">
+            <div style="margin-top: 10px; text-align: center; width: 44px;">
                 <div style="font-size: 14px; line-height: 1;">{icon}</div>
                 <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 4px;">{safe_text(label)}</div>
             </div>
@@ -629,22 +631,23 @@ else:
         # 按钮和加载状态
         is_disabled = not has_quota or st.session_state.is_analyzing
         
-        col_btn, col_status = st.columns([1, 3])
-        with col_btn:
-            if st.button("提交", disabled=is_disabled):
-                if not user_input:
-                    st.warning("请先输入内容")
-                elif not api_key:
-                    st.error("API Key 未配置")
-                else:
-                    st.session_state.is_analyzing = True
-                    st.rerun()
+        # 先渲染按钮
+        submitted = st.button("提交", disabled=is_disabled)
         
-        with col_status:
-            if st.session_state.is_analyzing:
-                st.markdown("""<div style="padding-top: 8px;">
-                    <span style="font-size: 14px; color: #0d9488;">🧠 AI分析中...</span>
-                </div>""", unsafe_allow_html=True)
+        # 如果正在分析，在按钮后面显示加载状态（用负margin上移）
+        if st.session_state.is_analyzing:
+            st.markdown("""<div style="margin-top: -50px; margin-left: 100px; padding: 12px 0;">
+                <span style="font-size: 14px; color: #0d9488;">🧠 AI分析中...</span>
+            </div>""", unsafe_allow_html=True)
+        
+        if submitted:
+            if not user_input:
+                st.warning("请先输入内容")
+            elif not api_key:
+                st.error("API Key 未配置")
+            else:
+                st.session_state.is_analyzing = True
+                st.rerun()
         
         # 执行分析
         if st.session_state.is_analyzing and user_input:
