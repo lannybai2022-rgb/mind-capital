@@ -9,7 +9,6 @@ from supabase import create_client
 import html
 import hashlib
 import base64
-import extra_streamlit_components as stx
 
 # ================= 1. 核心 Prompt =================
 STRICT_SYSTEM_PROMPT = """
@@ -125,13 +124,7 @@ button[kind="headerNoPadding"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ================= 3. Cookie 管理 =================
-def get_cookie_manager():
-    """获取Cookie管理器（不使用缓存装饰器）"""
-    if 'cookie_manager' not in st.session_state:
-        st.session_state.cookie_manager = stx.CookieManager()
-    return st.session_state.cookie_manager
-
+# ================= 3. URL Token 管理 =================
 def get_secret_key():
     """获取加密密钥"""
     return st.secrets.get("COOKIE_SECRET", "mindfocus_default_secret_key_2024")
@@ -163,6 +156,19 @@ def verify_auth_token(token):
         return {"username": username, "daily_limit": int(daily_limit)}
     except:
         return None
+
+def set_url_token(token):
+    """将token写入URL参数"""
+    st.query_params["token"] = token
+
+def get_url_token():
+    """从URL参数读取token"""
+    return st.query_params.get("token", None)
+
+def clear_url_token():
+    """清除URL中的token"""
+    if "token" in st.query_params:
+        del st.query_params["token"]
 
 # ================= 4. 数据库连接 =================
 @st.cache_resource
@@ -490,7 +496,7 @@ def render_focus_map(data_list):
     st.altair_chart(chart, use_container_width=True)
 
 # ================= 10. 登录页面 =================
-def render_login(cookie_manager):
+def render_login():
     st.markdown("""<div style="text-align: center; margin-top: 60px;">
         <div style="background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 16px; border-radius: 16px; display: inline-block; margin-bottom: 20px; font-size: 32px;">🧠</div>
         <h1 style="font-size: 28px; font-weight: 700; color: #1e293b;">MindfulFocus AI</h1>
@@ -506,9 +512,9 @@ def render_login(cookie_manager):
                 if username and password:
                     ok, msg, user = verify_login(username, password)
                     if ok:
-                        # 登录成功后设置Cookie
+                        # 登录成功后设置URL Token
                         token = generate_auth_token(username, user['daily_limit'])
-                        cookie_manager.set("auth_token", token, expires_at=datetime.datetime.now() + datetime.timedelta(days=7))
+                        set_url_token(token)
                         
                         st.session_state.logged_in = True
                         st.session_state.username = username
@@ -531,21 +537,18 @@ if "just_completed" not in st.session_state:
 
 api_key = st.secrets.get("OPENAI_API_KEY", "")
 
-# 初始化Cookie管理器
-cookie_manager = get_cookie_manager()
-
-# 尝试从Cookie自动登录
+# 尝试从URL Token自动登录
 if not st.session_state.logged_in:
-    auth_token = cookie_manager.get("auth_token")
-    if auth_token:
-        user_info = verify_auth_token(auth_token)
+    url_token = get_url_token()
+    if url_token:
+        user_info = verify_auth_token(url_token)
         if user_info:
             st.session_state.logged_in = True
             st.session_state.username = user_info["username"]
             st.session_state.daily_limit = user_info["daily_limit"]
 
 if not st.session_state.logged_in:
-    render_login(cookie_manager)
+    render_login()
 else:
     username = st.session_state.username
     daily_limit = st.session_state.daily_limit
