@@ -325,18 +325,16 @@ def render_header(username, daily_limit):
     color = "#10b981" if remaining > 10 else "#f59e0b" if remaining > 3 else "#ef4444"
     
     st.markdown(f"""
-    <div style="background: white; border-bottom: 1px solid #e2e8f0; padding: 12px 16px; margin: -1rem -1rem 1rem -1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <div style="background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%); color: white; padding: 6px; border-radius: 8px; font-size: 16px;">🧠</div>
-            <span style="font-weight: 700; font-size: 15px; color: #1e293b;">MindfulFocus AI</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="text-align: right;">
-                <div style="font-size: 10px; color: #64748b;">今日剩余</div>
-                <div style="font-size: 13px; font-weight: 600; color: {color};">{remaining}/{daily_limit}</div>
+    <div style="background: white; padding: 10px 14px; margin-bottom: 12px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%); color: white; padding: 5px 6px; border-radius: 8px; font-size: 14px; line-height: 1;">🧠</div>
+                <span style="font-weight: 700; font-size: 14px; color: #1e293b;">MindfulFocus AI</span>
             </div>
-            <div style="background: #f1f5f9; padding: 4px 10px; border-radius: 16px;">
-                <span style="font-size: 12px; font-weight: 500; color: #475569;">👤 {safe_text(username)}</span>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 11px; color: #64748b;">今日</span>
+                <span style="font-size: 12px; font-weight: 600; color: {color};">{remaining}/{daily_limit}</span>
+                <span style="background: #f1f5f9; padding: 3px 8px; border-radius: 12px; font-size: 11px; color: #475569;">👤 {safe_text(username)}</span>
             </div>
         </div>
     </div>
@@ -381,7 +379,7 @@ def render_gauge_card(scores):
         </div>
     </div>""", unsafe_allow_html=True)
 
-def render_insights(insights, recommendation, risk_alert, scores):
+def render_insights(insights, recommendation, risk_alert, scores, show_success=False):
     """渲染洞察和行动指南"""
     safe_insights = []
     if isinstance(insights, list):
@@ -407,6 +405,12 @@ def render_insights(insights, recommendation, risk_alert, scores):
         <h4 style="margin: 0 0 10px; font-size: 14px; color: #7c3aed;">💡 深度洞察</h4>
         <ul style="margin: 0; padding: 0; list-style: none;">{items}</ul>
     </div>""", unsafe_allow_html=True)
+    
+    # 显示分析完成提示
+    if show_success:
+        st.markdown("""<div style="background: #ecfdf5; padding: 12px 16px; border-radius: 12px; border: 1px solid #a7f3d0; margin-bottom: 10px; text-align: center;">
+            <span style="font-size: 14px; color: #059669; font-weight: 500;">✅ 分析完成！</span>
+        </div>""", unsafe_allow_html=True)
     
     st.markdown(f"""<div style="background: #f0fdf4; padding: 16px; border-radius: 16px; border: 1px solid #bbf7d0; margin-bottom: 12px;">
         <h4 style="margin: 0 0 10px; font-size: 14px; color: #16a34a;">❤️ 行动指南</h4>
@@ -522,6 +526,9 @@ if "logged_in" not in st.session_state:
 if "is_analyzing" not in st.session_state:
     st.session_state.is_analyzing = False
 
+if "just_completed" not in st.session_state:
+    st.session_state.just_completed = False
+
 api_key = st.secrets.get("OPENAI_API_KEY", "")
 
 # 初始化Cookie管理器
@@ -562,12 +569,19 @@ else:
             
             scores = latest.get('scores', {})
             render_gauge_card(scores)
+            
+            # 检查是否刚完成分析，显示成功提示
+            show_success = st.session_state.just_completed
             render_insights(
                 latest.get('key_insights', []), 
                 get_recommendation(latest),
                 latest.get('risk_alert'),
-                scores
+                scores,
+                show_success=show_success
             )
+            # 显示后清除标记
+            if show_success:
+                st.session_state.just_completed = False
         
         # 去掉引导语卡片，保留文字
         st.markdown("""<div style="padding: 8px 0 4px 0;">
@@ -612,7 +626,7 @@ else:
                 save_to_db(username, user_input, result)
                 increment_usage(username)
                 st.session_state.is_analyzing = False
-                st.toast("✅ 分析完成！")
+                st.session_state.just_completed = True  # 标记刚完成，用于显示成功提示
                 st.rerun()
             else:
                 st.session_state.is_analyzing = False
