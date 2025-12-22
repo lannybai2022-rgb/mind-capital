@@ -350,20 +350,17 @@ def render_header(username, daily_limit):
     # 添加顶部空白，避免被Streamlit工具栏遮挡
     st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
     
-    # 使用columns布局，左侧logo，右侧用户信息
-    col_left, col_right = st.columns([1, 1])
-    
-    with col_left:
-        st.markdown("""<div style="display: flex; align-items: center; gap: 10px;">
+    # 单行HTML布局，左侧logo右侧用户信息
+    st.markdown(f"""<div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; margin-bottom: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
             <div style="background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 8px 10px; border-radius: 12px; font-size: 20px; line-height: 1; box-shadow: 0 2px 8px rgba(20,184,166,0.3);">🧠</div>
             <span style="font-weight: 700; font-size: 16px; color: #1e293b;">MindfulFocus AI</span>
-        </div>""", unsafe_allow_html=True)
-    
-    with col_right:
-        st.markdown(f"""<div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
             <span style="font-size: 12px; color: #64748b;">今日 <span style="font-weight: 600; color: {color};">{remaining}/{daily_limit}</span></span>
             <span style="background: #f1f5f9; padding: 4px 10px; border-radius: 12px; font-size: 12px; color: #475569;">👤 {safe_text(username)}</span>
-        </div>""", unsafe_allow_html=True)
+        </div>
+    </div>""", unsafe_allow_html=True)
 
 def render_gauge_card(scores):
     """渲染温度计卡片"""
@@ -431,11 +428,9 @@ def render_insights(insights, recommendation, risk_alert, scores, show_success=F
         <ul style="margin: 0; padding: 0; list-style: none;">{items}</ul>
     </div>""", unsafe_allow_html=True)
     
-    # 显示分析完成提示
+    # 显示分析完成提示（使用toast，显示时间稍长）
     if show_success:
-        st.markdown("""<div style="background: #ecfdf5; padding: 12px 16px; border-radius: 12px; border: 1px solid #a7f3d0; margin-bottom: 10px; text-align: center;">
-            <span style="font-size: 14px; color: #059669; font-weight: 500;">✅ 分析完成！</span>
-        </div>""", unsafe_allow_html=True)
+        st.toast("✅ 分析完成！", icon="✅")
     
     st.markdown(f"""<div style="background: #f0fdf4; padding: 16px; border-radius: 16px; border: 1px solid #bbf7d0; margin-bottom: 12px;">
         <h4 style="margin: 0 0 10px; font-size: 14px; color: #16a34a;">❤️ 行动指南</h4>
@@ -624,31 +619,25 @@ else:
         
         has_quota, remaining, used = check_quota(username, daily_limit)
         
-        # 按钮和加载状态 - 使用HTML实现同行布局
+        # 按钮和加载状态
         is_disabled = not has_quota or st.session_state.is_analyzing
         
-        # 显示加载状态文字
-        status_text = ""
-        if st.session_state.is_analyzing:
-            status_text = "🧠 AI分析中..."
+        col_btn, col_status = st.columns([1, 3])
+        with col_btn:
+            if st.button("提交", disabled=is_disabled):
+                if not user_input:
+                    st.warning("请先输入内容")
+                elif not api_key:
+                    st.error("API Key 未配置")
+                else:
+                    st.session_state.is_analyzing = True
+                    st.rerun()
         
-        st.markdown(f"""<div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
-            <div style="flex: 0 0 auto;">
-        </div>""", unsafe_allow_html=True)
-        
-        if st.button("提交", disabled=is_disabled):
-            if not user_input:
-                st.warning("请先输入内容")
-            elif not api_key:
-                st.error("API Key 未配置")
-            else:
-                st.session_state.is_analyzing = True
-                st.rerun()
-        
-        if status_text:
-            st.markdown(f"""<div style="margin-top: -45px; margin-left: 90px; height: 40px; display: flex; align-items: center;">
-                <span style="font-size: 14px; color: #0d9488;">{status_text}</span>
-            </div>""", unsafe_allow_html=True)
+        with col_status:
+            if st.session_state.is_analyzing:
+                st.markdown("""<div style="padding-top: 8px;">
+                    <span style="font-size: 14px; color: #0d9488;">🧠 AI分析中...</span>
+                </div>""", unsafe_allow_html=True)
         
         # 执行分析
         if st.session_state.is_analyzing and user_input:
@@ -699,3 +688,13 @@ else:
             </div>""", unsafe_allow_html=True)
         else:
             st.info("暂无数据，请先在「情绪资产记录」页面记录。")
+
+
+
+
+
+
+
+
+
+
