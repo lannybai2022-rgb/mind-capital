@@ -126,8 +126,13 @@ button[kind="headerNoPadding"] { display: none !important; }
 
 # ================= 3. URL Token 管理 =================
 def get_secret_key():
-    """获取加密密钥"""
-    return st.secrets.get("COOKIE_SECRET", "mindfocus_default_secret_key_2024")
+    """获取加密密钥（兼容不同Streamlit版本）"""
+    try:
+        if hasattr(st, 'secrets') and "COOKIE_SECRET" in st.secrets:
+            return st.secrets["COOKIE_SECRET"]
+        return "mindfocus_default_secret_key_2024"
+    except Exception:
+        return "mindfocus_default_secret_key_2024"
 
 def generate_auth_token(username, daily_limit, days_valid=7):
     """生成加密的认证token"""
@@ -159,16 +164,28 @@ def verify_auth_token(token):
 
 def set_url_token(token):
     """将token写入URL参数"""
-    st.query_params["token"] = token
+    try:
+        if hasattr(st, 'query_params'):
+            st.query_params["token"] = token
+    except Exception:
+        pass  # 设置失败不影响登录
 
 def get_url_token():
     """从URL参数读取token"""
-    return st.query_params.get("token", None)
+    try:
+        if hasattr(st, 'query_params'):
+            return st.query_params.get("token", None)
+        return None
+    except Exception:
+        return None
 
 def clear_url_token():
     """清除URL中的token"""
-    if "token" in st.query_params:
-        del st.query_params["token"]
+    try:
+        if hasattr(st, 'query_params') and "token" in st.query_params:
+            del st.query_params["token"]
+    except Exception:
+        pass
 
 # ================= 4. 数据库连接 =================
 @st.cache_resource
@@ -330,13 +347,23 @@ def render_header(username, daily_limit):
     remaining = daily_limit - used
     color = "#10b981" if remaining > 10 else "#f59e0b" if remaining > 3 else "#ef4444"
     
-    # 单行布局，所有内容右对齐
-    st.markdown(f"""<div style="display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 8px 0; flex-wrap: wrap;">
-        <span style="font-weight: 600; font-size: 13px; color: #1e293b;">🧠 MindfulFocus AI</span>
-        <span style="color: #e2e8f0;">|</span>
-        <span style="font-size: 12px; color: #64748b;">今日 <span style="font-weight: 600; color: {color};">{remaining}/{daily_limit}</span></span>
-        <span style="background: #f1f5f9; padding: 4px 10px; border-radius: 12px; font-size: 12px; color: #475569;">👤 {safe_text(username)}</span>
-    </div>""", unsafe_allow_html=True)
+    # 添加顶部空白，避免被Streamlit工具栏遮挡
+    st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
+    
+    # 使用columns布局，左侧logo，右侧用户信息
+    col_left, col_right = st.columns([1, 1])
+    
+    with col_left:
+        st.markdown("""<div style="display: flex; align-items: center; gap: 10px;">
+            <div style="background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 8px 10px; border-radius: 12px; font-size: 20px; line-height: 1; box-shadow: 0 2px 8px rgba(20,184,166,0.3);">🧠</div>
+            <span style="font-weight: 700; font-size: 16px; color: #1e293b;">MindfulFocus AI</span>
+        </div>""", unsafe_allow_html=True)
+    
+    with col_right:
+        st.markdown(f"""<div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+            <span style="font-size: 12px; color: #64748b;">今日 <span style="font-weight: 600; color: {color};">{remaining}/{daily_limit}</span></span>
+            <span style="background: #f1f5f9; padding: 4px 10px; border-radius: 12px; font-size: 12px; color: #475569;">👤 {safe_text(username)}</span>
+        </div>""", unsafe_allow_html=True)
 
 def render_gauge_card(scores):
     """渲染温度计卡片"""
@@ -527,17 +554,27 @@ if "is_analyzing" not in st.session_state:
 if "just_completed" not in st.session_state:
     st.session_state.just_completed = False
 
-api_key = st.secrets.get("OPENAI_API_KEY", "")
+# 获取API Key（兼容不同Streamlit版本）
+try:
+    if hasattr(st, 'secrets') and "OPENAI_API_KEY" in st.secrets:
+        api_key = st.secrets["OPENAI_API_KEY"]
+    else:
+        api_key = ""
+except Exception:
+    api_key = ""
 
 # 尝试从URL Token自动登录
 if not st.session_state.logged_in:
-    url_token = get_url_token()
-    if url_token:
-        user_info = verify_auth_token(url_token)
-        if user_info:
-            st.session_state.logged_in = True
-            st.session_state.username = user_info["username"]
-            st.session_state.daily_limit = user_info["daily_limit"]
+    try:
+        url_token = get_url_token()
+        if url_token:
+            user_info = verify_auth_token(url_token)
+            if user_info:
+                st.session_state.logged_in = True
+                st.session_state.username = user_info["username"]
+                st.session_state.daily_limit = user_info["daily_limit"]
+    except Exception:
+        pass  # Token读取失败，继续显示登录页面
 
 if not st.session_state.logged_in:
     render_login()
