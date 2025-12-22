@@ -330,21 +330,21 @@ def render_header(username, daily_limit):
     remaining = daily_limit - used
     color = "#10b981" if remaining > 10 else "#f59e0b" if remaining > 3 else "#ef4444"
     
-    st.markdown(f"""
-    <div style="background: white; padding: 10px 14px; margin-bottom: 12px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <div style="background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%); color: white; padding: 5px 6px; border-radius: 8px; font-size: 14px; line-height: 1;">🧠</div>
-                <span style="font-weight: 700; font-size: 14px; color: #1e293b;">MindfulFocus AI</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 11px; color: #64748b;">今日</span>
-                <span style="font-size: 12px; font-weight: 600; color: {color};">{remaining}/{daily_limit}</span>
-                <span style="background: #f1f5f9; padding: 3px 8px; border-radius: 12px; font-size: 11px; color: #475569;">👤 {safe_text(username)}</span>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # 使用Streamlit原生columns布局
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.markdown(f"""<div style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
+            <div style="background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%); color: white; padding: 5px 6px; border-radius: 8px; font-size: 14px; line-height: 1;">🧠</div>
+            <span style="font-weight: 700; font-size: 14px; color: #1e293b;">MindfulFocus AI</span>
+        </div>""", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""<div style="text-align: right; padding: 4px 0;">
+            <span style="font-size: 11px; color: #64748b;">今日 </span>
+            <span style="font-size: 12px; font-weight: 600; color: {color};">{remaining}/{daily_limit}</span>
+            <span style="background: #f1f5f9; padding: 3px 8px; border-radius: 12px; font-size: 11px; color: #475569; margin-left: 6px;">👤 {safe_text(username)}</span>
+        </div>""", unsafe_allow_html=True)
+    
+    st.markdown("<hr style='margin: 8px 0 12px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
 
 def render_gauge_card(scores):
     """渲染温度计卡片"""
