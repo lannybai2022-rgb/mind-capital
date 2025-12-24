@@ -221,6 +221,19 @@ def verify_login(username, password):
     except Exception as e:
         return False, f"验证失败: {e}", None
 
+def get_user_custom_prompt(username):
+    """获取用户的定制 prompt（新增函数）"""
+    sb = init_supabase()
+    if not sb:
+        return None
+    try:
+        res = sb.table("test_accounts").select("custom_prompt").eq("username", username).execute()
+        if res.data and len(res.data) > 0:
+            return res.data[0].get('custom_prompt')
+        return None
+    except:
+        return None
+
 def get_today_usage(username):
     sb = init_supabase()
     if not sb:
@@ -301,11 +314,15 @@ def clean_json_string(s):
     return s.strip()
 
 def analyze_emotion(text, api_key):
+    # 【修改】判断使用定制 prompt 还是默认 prompt
+    custom_prompt = st.session_state.get('custom_prompt')
+    system_prompt = custom_prompt if custom_prompt else STRICT_SYSTEM_PROMPT
+    
     client = openai.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     try:
         response = client.chat.completions.create(
             model="deepseek-chat",
-            messages=[{"role": "system", "content": STRICT_SYSTEM_PROMPT}, {"role": "user", "content": text}],
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": text}],
             temperature=0.4
         )
         content = response.choices[0].message.content
@@ -542,6 +559,7 @@ def render_login():
                         st.session_state.logged_in = True
                         st.session_state.username = username
                         st.session_state.daily_limit = user['daily_limit']
+                        st.session_state.custom_prompt = user.get('custom_prompt')  # 【新增】存储定制 prompt
                         st.rerun()
                     else:
                         st.error(msg)
@@ -577,6 +595,8 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.username = user_info["username"]
                 st.session_state.daily_limit = user_info["daily_limit"]
+                # 【新增】自动登录时从数据库获取定制 prompt
+                st.session_state.custom_prompt = get_user_custom_prompt(user_info["username"])
     except Exception:
         pass  # Token读取失败，继续显示登录页面
 
@@ -698,3 +718,7 @@ else:
             </div>""", unsafe_allow_html=True)
         else:
             st.info("暂无数据，请先在「情绪资产记录」页面记录。")
+
+
+
+
