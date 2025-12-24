@@ -221,18 +221,19 @@ def verify_login(username, password):
     except Exception as e:
         return False, f"验证失败: {e}", None
 
-def get_user_custom_prompt(username):
-    """获取用户的定制 prompt（新增函数）"""
+def get_user_settings(username):
+    """获取用户的定制设置（custom_prompt 和 temperature）"""
     sb = init_supabase()
     if not sb:
-        return None
+        return None, None
     try:
-        res = sb.table("test_accounts").select("custom_prompt").eq("username", username).execute()
+        res = sb.table("test_accounts").select("custom_prompt, temperature").eq("username", username).execute()
         if res.data and len(res.data) > 0:
-            return res.data[0].get('custom_prompt')
-        return None
+            data = res.data[0]
+            return data.get('custom_prompt'), data.get('temperature')
+        return None, None
     except:
-        return None
+        return None, None
 
 def get_today_usage(username):
     sb = init_supabase()
@@ -318,12 +319,15 @@ def analyze_emotion(text, api_key):
     custom_prompt = st.session_state.get('custom_prompt')
     system_prompt = custom_prompt if custom_prompt else STRICT_SYSTEM_PROMPT
     
+    # 【新增】获取用户配置的 temperature，默认 0.4
+    temperature = st.session_state.get('temperature') or 0.4
+    
     client = openai.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     try:
         response = client.chat.completions.create(
             model="deepseek-chat",
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": text}],
-            temperature=0.4
+            temperature=temperature
         )
         content = response.choices[0].message.content
         cleaned = clean_json_string(content)
@@ -560,6 +564,7 @@ def render_login():
                         st.session_state.username = username
                         st.session_state.daily_limit = user['daily_limit']
                         st.session_state.custom_prompt = user.get('custom_prompt')  # 【新增】存储定制 prompt
+                        st.session_state.temperature = user.get('temperature') or 0.4  # 【新增】存储 temperature
                         st.rerun()
                     else:
                         st.error(msg)
@@ -595,8 +600,10 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.username = user_info["username"]
                 st.session_state.daily_limit = user_info["daily_limit"]
-                # 【新增】自动登录时从数据库获取定制 prompt
-                st.session_state.custom_prompt = get_user_custom_prompt(user_info["username"])
+                # 【新增】自动登录时从数据库获取定制设置
+                custom_prompt, temperature = get_user_settings(user_info["username"])
+                st.session_state.custom_prompt = custom_prompt
+                st.session_state.temperature = temperature or 0.4
     except Exception:
         pass  # Token读取失败，继续显示登录页面
 
@@ -718,7 +725,3 @@ else:
             </div>""", unsafe_allow_html=True)
         else:
             st.info("暂无数据，请先在「情绪资产记录」页面记录。")
-
-
-
-
